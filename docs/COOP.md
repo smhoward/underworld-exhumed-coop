@@ -217,6 +217,8 @@ Inventory moves now detect rejected destinations and walking refuses to start wh
 an item remains on the cursor. A native recipe-to-rune-bag rejection verified both
 guards and returning the item without changing either private inventory. Planned
 river descents can use `go --max-drop`; native collision and fall damage still apply.
+Use actions check the acting character's native range feedback before continuing,
+so a rejected shrine interaction cannot turn the intended chant into movement keys.
 The observer also preserves the native string decoder state. Without that protection,
 its item-name reads replaced retained Garamon subtitles with item names. A regression
 reproduced that overwrite, and a genuine saved-campaign rest replay now shows readable
@@ -306,7 +308,10 @@ are still in progress. The persistent campaign has reached level 4 with no talis
 acquired. The guest completed Ishtass's Ossikka delivery with the original scroll and
 received the private Wis stone, wand and potion reward. The bandit key and southern
 combat route are cleared; the remaining level 3 routes require a return. The remaining
-talismans and ending have not been completed in this run.
+talismans and ending have not been completed in this run. On level 4, the host's Crux
+initiation was recognized by the guest's troll dialogue; the guest recovered and
+delivered the Writ of Lorne, received a private plate helm, and completed Derek's Gem
+Cutter delivery. Both characters advanced their own skills at original shrines.
 
 Both Windows binaries build. These scenarios supply prerequisites and call native
 handlers or drive native input; they are **not a completed start-to-finish playthrough**.

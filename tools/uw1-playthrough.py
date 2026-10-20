@@ -98,13 +98,15 @@ def message_mark():
     return path.stat().st_size if path.exists() else 0
 
 
-def messages_since(mark):
+def messages_since(mark,role=None):
     path=OUT/'host/messages.jsonl'
     if not path.exists():return ''
     with path.open('rb') as source:source.seek(mark);data=source.read()
     texts=[]
     for line in data.splitlines():
-        try:texts.append(json.loads(line)['text'])
+        try:
+            message=json.loads(line)
+            if role is None or message.get('seat')==int(role=='client'):texts.append(message['text'])
         except (ValueError,KeyError,UnicodeDecodeError):pass
     return ''.join(texts)
 
@@ -207,6 +209,7 @@ def interact(role,index,action='use',destination=None):
     found=next((t for t in targets(role) if t['index']==index),None)
     if not found:raise RuntimeError(f'Object {index} is outside {role} view')
     before=carried_count(state(),which,obj['item']) if action=='get' and destination else None
+    mark=message_mark()
     if destination:
         command(role,'pointer',found['x'],found['y'],2);time.sleep(.6)
         if action=='get' and obj and obj['quantity'] and obj['link']>1 and state()['story']:
@@ -223,6 +226,8 @@ def interact(role,index,action='use',destination=None):
                 time.sleep(.1)
             else:raise RuntimeError('Native pickup did not add the item; inspect its range and destination')
     else:click(role,found['x'],found['y'])
+    if any(text in messages_since(mark,role).lower() for text in ('cannot reach','unable to use that from here')):
+        raise InteractionOutOfReach('The original interaction was out of reach; move closer before continuing')
 
 
 def checkpoint(label):
@@ -321,7 +326,7 @@ def unlock(role,index):
         if state()['characters'][which]['input_mode']!=2:
             raise RuntimeError('The native key did not enter target mode')
         mark=message_mark();interact(role,door['index']);time.sleep(.2)
-        if any(text in messages_since(mark).lower() for text in ('cannot reach','unable to use that from here')):
+        if any(text in messages_since(mark,role).lower() for text in ('cannot reach','unable to use that from here')):
             raise InteractionOutOfReach('Move closer before trying the carried keys')
         if state()['characters'][which]['input_mode']==2:
             raise RuntimeError('The native key target is still pending')
@@ -681,7 +686,7 @@ def go(role,x,y,engage=False,jumping=False,max_rise=1,*,water_cost=30,max_drop=1
                 door_tile=positions(s)[door['index']]
                 if held:command(role,'key',KEYS[held],0);held=None
                 face_object(role,door['index']);mark=message_mark();interact(role,door['index']);time.sleep(.5)
-                if any(text in messages_since(mark).lower() for text in ('cannot reach','unable to use that from here')):
+                if any(text in messages_since(mark,role).lower() for text in ('cannot reach','unable to use that from here')):
                     key(role,'x',.15);continue
                 changed=closed_door(state(),door_tile)
                 try:locked=changed and not unlock(role,changed['index'])
