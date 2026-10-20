@@ -191,8 +191,9 @@ def place_cursor(role,slot):
     if s['characters'][which]['input_mode']==2:raise RuntimeError('Complete the native two-object use before placing its cursor')
     obj=next(o for o in s['objects'] if o['index']==index)
     expected=carried_count(s,which,obj['item'])+(obj['link'] if obj['quantity'] and not obj['link']&512 else 1)
+    button=2 if s['screen']==2 else 1  # Native conversation inventory uses the right-button action.
     for _ in range(3):
-        command(role,'pointer',*slot_point(slot),1);time.sleep(.1);command(role,'pointer',*slot_point(slot),0)
+        command(role,'pointer',*slot_point(slot),button);time.sleep(.1);command(role,'pointer',*slot_point(slot),0)
         for _ in range(20):
             s=state()
             if not s['characters'][which]['cursor'] and carried_count(s,which,obj['item'])==expected:return

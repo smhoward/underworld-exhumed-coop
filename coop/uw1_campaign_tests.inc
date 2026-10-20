@@ -188,7 +188,36 @@ static void campaign_test(void)
     if(!mode || !partner)return;
     if(!began)began=now;
     if(now-began<500)return;
-    if(!strcmp(mode,"observer")) {
+    if(!strcmp(mode,"camp")) {
+        if(stage==0){campaign_arrive(4,40,10);stage=1;return;}
+        if(stage==1) {
+            extern void yearly_checkup(void),update_all_critters_whilst_player_snoozes(void);
+            extern char hostile_creatures_near(void);
+            struct Object before[2],*npc=NULL;
+            for(unsigned char *p=ActiveMob;p<LastActiveMob;p++) {
+                struct Object *o=critdata+*p;
+                if(!port_shared_avatar(o) && OBJ_MAJOR(o)==MAJOR_CREATURE && !OBJ_TEMP(o) && o->hp && Creature[OBJ_INMAJOR(o)].avghit>2){npc=o;break;}
+            }
+            campaign_require(npc!=NULL,"camp NPC prerequisite missing");
+            for(int owner=0;owner<2;owner++) {
+                seat(owner);critdata[1].hp=11;partner->hp=13;
+                SET_ALLY(critdata+1,1);SET_ALLY(partner,1);SET_FED(critdata+1,1);SET_FED(partner,1);
+                before[0]=critdata[1];before[1]=*partner;
+                npc->hp=1;SET_NOHEAL(npc,0);
+                int healed=(1+Creature[OBJ_INMAJOR(npc)].avghit)/2;
+                update_all_critters_whilst_player_snoozes();
+                fprintf(stderr,"SHARED CAMP owner=%d avatar HP=%u,%u NPC=%u expected=%d\n",owner,critdata[1].hp,partner->hp,npc->hp,healed);
+                campaign_require(critdata[1].hp==11 && partner->hp==13,"NPC rest update healed a player avatar");
+                campaign_require(!memcmp(before,critdata+1,sizeof before[0]) && !memcmp(before+1,partner,sizeof before[1]),"NPC rest update changed player AI/position flags");
+                campaign_require(npc->hp==healed,"ordinary NPC did not receive native rest healing");
+                for(int i=0;i<16;i++)yearly_checkup();
+                campaign_require(!memcmp(before,critdata+1,sizeof before[0]) && !memcmp(before+1,partner,sizeof before[1]),"periodic NPC checkup changed a player avatar");
+                fprintf(stderr,"SHARED CAMPAIGN camp owner %d preserves both avatars and native NPC healing passed\n",owner);
+            }
+            seat(0);fprintf(stderr,"SHARED CAMPAIGN camp complete\n");stage=100;
+        }
+    }
+    else if(!strcmp(mode,"observer")) {
         if(stage==0) {
             extern char str_buff[0x1000];
             extern int16 OutString,string_bits_used;

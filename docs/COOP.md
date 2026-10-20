@@ -154,6 +154,7 @@ python tools/test-shared-world.py --data /path/to/UW1 --campaign messages
 python tools/test-shared-world.py --data /path/to/UW1 --campaign hud
 python tools/test-shared-world.py --data /path/to/UW1 --campaign maps
 python tools/test-shared-world.py --data /path/to/UW1 --campaign observer
+python tools/test-shared-world.py --data /path/to/UW1 --campaign camp
 ```
 
 UW1 has been exercised in actual processes for visible avatars, independent movement,
@@ -205,6 +206,9 @@ The campaign scenarios use separate homes under `build/campaign-tests/uw1/`:
 - `observer`: the opt-in campaign observer exports the real world without changing
   retained native dream captions, the eight string buffers, or the decoder's cursor,
   buffered bits and file position.
+- `camp`: NPC rest and periodic updates run from either character's context without
+  changing either avatar's health, AI flags or position; ordinary NPCs still receive
+  their native rest healing. Normal player sleep uses percentage-based healing.
 
 `tools/uw1-playthrough.py` also runs a persistent campaign in isolated homes under
 `build/uw1-playthrough/`. It uses the packaged UW1 executable, original game data,
@@ -306,7 +310,9 @@ entry, viewing and exit with both characters.
 The complete main story, all talisman acquisition routes, and optional side quests
 are still in progress. The persistent campaign has reached level 4 and returned to
 level 3, where the guest acquired the original Taper of Sacrifice through Zak's native
-barter. This is the first talisman acquired in the run. The guest completed Ishtass's
+barter. Back on level 4, the guest defeated Rodrick, and Dorna recognized that victory
+when the host spoke to him and received the Standard of Honor. These two original
+talismans remain in separate inventories. The guest completed Ishtass's
 Ossikka delivery with the original scroll and
 received the private Wis stone, wand and potion reward. The bandit key and southern
 combat route are cleared; the remaining level 3 routes require a return. The remaining
@@ -317,11 +323,18 @@ Derek's Gem Cutter delivery. The host made rotworm stew from the original ingred
 and recipe, then exchanged it with Sethar for dragon scales. Both characters advanced
 their own skills at original shrines.
 
+On returning to level 3, the guest supplied fresh fish to free Murgo and received his
+thank-you dialogue. The party also completed the vine Search checks and pond drainage,
+defeated the ghost, and recovered Caliburn's original broken blade. These checkpoints
+retain the guest's talisman and blade, shared quest state, and separate character stats.
+
 The input driver also checks that inventory drags actually change the acting player's
 inventory, so a hidden inventory panel cannot silently pass as an equipment change.
 Barter offers verify the expected item-count decrease before returning; this avoids
 an extra look click that could leave a text prompt ahead of the next offer. The live
 campaign verified the rune-panel rejection and the original talisman barter retry.
+Conversation cursor placement uses the native right-button inventory action, as
+verified when the host received and saved the Standard of Honor.
 
 Both Windows binaries build. These scenarios supply prerequisites and call native
 handlers or drive native input; they are **not a completed start-to-finish playthrough**.
