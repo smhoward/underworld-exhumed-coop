@@ -188,7 +188,27 @@ static void campaign_test(void)
     if(!mode || !partner)return;
     if(!began)began=now;
     if(now-began<500)return;
-    if(!strcmp(mode,"maps")) {
+    if(!strcmp(mode,"observer")) {
+        if(stage==0) {
+            extern char str_buff[0x1000];
+            extern int16 OutString,string_bits_used;
+            char before[0x1000],expected[512],*caption;
+            int16 block=CutsceneOrConversationStringBlock,out,bits,used;
+            long position;
+            CutsceneOrConversationStringBlock=STRBLK_CUTSCENE+30;
+            caption=get_string(1);snprintf(expected,sizeof expected,"%s",caption);
+            CutsceneOrConversationStringBlock=block;
+            campaign_require(*caption!=0,"original dream caption is empty");
+            memcpy(before,str_buff,sizeof before);out=OutString;
+            bits=string_bits;used=string_bits_used;position=ftell(StringsPak_FileHandle);
+            if(!bot_state())return;
+            campaign_require(!strcmp(caption,expected),"observer overwrote retained native dream caption");
+            campaign_require(!memcmp(before,str_buff,sizeof before) && OutString==out && string_bits==bits && string_bits_used==used && ftell(StringsPak_FileHandle)==position,"observer changed native string decoder state");
+            fprintf(stderr,"SHARED CAMPAIGN read-only observer retains dream captions and string decoder state passed\n");
+            fprintf(stderr,"SHARED CAMPAIGN observer complete\n");stage=100;
+        }
+    }
+    else if(!strcmp(mode,"maps")) {
         extern int16 mdispcnt;
         if(stage<8 && !(stage&1)) {
             int owner=(stage/2)&1;

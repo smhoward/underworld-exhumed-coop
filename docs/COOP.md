@@ -153,6 +153,7 @@ python tools/test-shared-world.py --data /path/to/UW1 --campaign terrain
 python tools/test-shared-world.py --data /path/to/UW1 --campaign messages
 python tools/test-shared-world.py --data /path/to/UW1 --campaign hud
 python tools/test-shared-world.py --data /path/to/UW1 --campaign maps
+python tools/test-shared-world.py --data /path/to/UW1 --campaign observer
 ```
 
 UW1 has been exercised in actual processes for visible avatars, independent movement,
@@ -201,6 +202,9 @@ The campaign scenarios use separate homes under `build/campaign-tests/uw1/`:
   sprite layers, and its pixels are retained for the corresponding camera.
 - `maps`: repeated map entry and exit by alternating characters, checking that
   the native mouse-handler count remains stable while viewing and after closing.
+- `observer`: the opt-in campaign observer exports the real world without changing
+  retained native dream captions, the eight string buffers, or the decoder's cursor,
+  buffered bits and file position.
 
 `tools/uw1-playthrough.py` also runs a persistent campaign in isolated homes under
 `build/uw1-playthrough/`. It uses the packaged UW1 executable, original game data,
@@ -213,6 +217,10 @@ Inventory moves now detect rejected destinations and walking refuses to start wh
 an item remains on the cursor. A native recipe-to-rune-bag rejection verified both
 guards and returning the item without changing either private inventory. Planned
 river descents can use `go --max-drop`; native collision and fall damage still apply.
+The observer also preserves the native string decoder state. Without that protection,
+its item-name reads replaced retained Garamon subtitles with item names. A regression
+reproduced that overwrite, and a genuine saved-campaign rest replay now shows readable
+dream captions with matching caption pixels in both views.
 
 The live run has exercised level 1 starting equipment, Bragit/Hagbard/Gulik/Drog
 conversations, the shared Hagbard flag, NPC-controlled gates, key use, item transfers,

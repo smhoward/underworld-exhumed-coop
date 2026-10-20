@@ -140,6 +140,7 @@ static int shared_find_position(struct Object *obj,int x,int y,int16 *outx,int16
 }
 #if COOP_GAME == 1
 static void bot_snapshot(void);
+static int bot_state(void);
 #include "uw1_characters.inc"
 #include "uw1_campaign_tests.inc"
 #include "uw1_playthrough.inc"

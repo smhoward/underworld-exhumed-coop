@@ -45,7 +45,7 @@ def main():
     parser.add_argument('--binary',type=Path,help='optional diagnostic game build')
     parser.add_argument('--resume',action='store_true',help='UW1: load the character test campaign in fresh processes')
     parser.add_argument('--chargen',action='store_true',help='UW1: client controls native character creation')
-    parser.add_argument('--campaign',choices=['quests','puzzles','ritual','ending','terrain','messages','hud','maps'],help='UW1: native campaign handler integration scenario')
+    parser.add_argument('--campaign',choices=['quests','puzzles','ritual','ending','terrain','messages','hud','maps','observer'],help='UW1: native campaign handler integration scenario')
     args=parser.parse_args()
     if args.characters and args.game!='uw1':parser.error('--characters is UW1-only')
     if args.resume:args.characters=True
@@ -107,6 +107,7 @@ def main():
     files=[]
     try:
         for role in ('host','client'):
+            if args.campaign=='observer':env['UW_COOP_BOT_HOME']=str(out/role)
             log=(out/(role+'.log')).open('w',encoding='utf-8');files.append(log)
             command=[str(binary),'--coop-shared','--home',str(out/role),'--hidden',
                      '--no-recording','--exit-after','60000' if args.campaign in ('quests','ending') else '25000' if args.campaign or args.characters or args.chargen else '10000',

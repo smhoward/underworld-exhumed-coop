@@ -81,12 +81,19 @@ static void bot_string(FILE *fp,const char *text)
     }
     fputc('"',fp);
 }
-static void bot_state(void)
+static int bot_state(void)
 {
+    extern char str_buff[0x1000];
+    extern int16 OutString,string_bits_used;
     static uint64_t next;static unsigned long frame;FILE *fp;unsigned char seen[1024]={0};
+    char strings[0x1000];int16 string_out,bits,bits_used;long string_position;
     uint64_t now=shared_now();
-    if(!getenv("UW_COOP_BOT_HOME") || now<next || !partner || !mapdata)return;next=now+100;
-    fp=port_bot_open("state.tmp","wb");if(!fp)return;
+    if(!getenv("UW_COOP_BOT_HOME") || now<next || !partner || !mapdata)return 0;next=now+100;
+    fp=port_bot_open("state.tmp","wb");if(!fp)return 0;
+    /* Native subtitles and dialogue retain pointers into this eight-slot pool.
+       Observing item names must not evict them or disturb the Huffman reader. */
+    memcpy(strings,str_buff,sizeof strings);string_out=OutString;
+    bits=string_bits;bits_used=string_bits_used;string_position=ftell(StringsPak_FileHandle);
     fprintf(fp,"{\"frame\":%lu,\"command\":%u,\"level\":%d,\"screen\":%d,\"modal\":%d,\"story\":%d,\"characters\":[",++frame,bot_serial,PlayerLevel,scrnum,modal_owner,story_view);
     for(int s=0;s<2;s++) {
         const struct Player *p=s==atomic_load(&active_seat)?player:&characters[s].record;
@@ -129,4 +136,7 @@ static void bot_state(void)
         if((OBJ_MAJOR(o)==MAJOR_CREATURE || (item>=0x80 && item<0x90)) && OBJ_LINK(o) && n<2048)queue[n++]=OBJ_LINK(o);
     }
     fprintf(fp,"]}");fclose(fp);port_bot_commit();
+    memcpy(str_buff,strings,sizeof strings);OutString=string_out;
+    string_bits=bits;string_bits_used=bits_used;fseek(StringsPak_FileHandle,string_position,SEEK_SET);
+    return 1;
 }
