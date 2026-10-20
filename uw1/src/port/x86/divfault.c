@@ -7,9 +7,12 @@
    INSTANCE.ASM's three return to the faulting code past the divide (they add 2 or 4 to the IP
    the CPU pushed), with AX = 7FFFh (or its negative) and DX = 0, and leave the flags as the
    iret restores them, the divide's; they are modelled here, and a fault in an instruction of
-   another length (which in DOS would resume in its middle) stops the port. The others are
-   recovery paths that drop the interrupt frame and jump on (INTERP.ASM, SMOOTH.ASM,
-   TMAPOPS.ASM): the CPU's frame is pushed and the handler runs as translated code. */
+   another length (which in DOS would resume in its middle) stops the port.
+   SMOOTH.ASM and TMAPOPS.ASM also have handlers that IRET past the divide. Run those
+   handlers here, including smooth shading's recursive retry with a halved dividend,
+   and consume the IRET before returning to the translated faulting instruction.
+   The remaining recovery paths drop the interrupt frame and jump on (INTERP.ASM):
+   the CPU's frame is pushed and the handler runs as translated code. */
 #include <stdio.h>
 #include "x86/asmrt.h"
 
@@ -39,6 +42,19 @@ uint32_t asm_divfault(uint16_t seg, uint16_t ip, unsigned len)
         AX = (int16_t)(DX ^ BP) < 0 ? 0x8001 : 0x7FFF;
         DX = 0;
         return 0;
+    case 0x09E5:                        /* smooth clipping: halve dividend and retry, then IRET */
+    case 0x692C: {                      /* texture projection: AX 7FFFh, DX 0, then IRET */
+        uint16_t sp = SP;
+        uint32_t result;
+        if (len != 2) break;
+        push16(asm_flags());
+        push16((uint16_t)(seg + PORT_LOAD_SEG));
+        push16(ip);
+        result = asm_exec(ASM_JMP(SEG004, h));
+        if (result != ASM_IRET || SP != sp || rw(pSS, (uint16_t)(sp - 6)) != (uint16_t)(ip + len))
+            asm_halt_at(seg, ip, "divide handler did not resume after its instruction");
+        return 0;
+    }
     default:
         /* the CPU pushes FLAGS, CS and IP; the recovery path drops them itself */
         push16(asm_flags());

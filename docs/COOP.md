@@ -155,6 +155,7 @@ python tools/test-shared-world.py --data /path/to/UW1 --campaign hud
 python tools/test-shared-world.py --data /path/to/UW1 --campaign maps
 python tools/test-shared-world.py --data /path/to/UW1 --campaign observer
 python tools/test-shared-world.py --data /path/to/UW1 --campaign camp
+python tools/test-shared-world.py --data /path/to/UW1 --campaign division
 ```
 
 UW1 has been exercised in actual processes for visible avatars, independent movement,
@@ -209,6 +210,9 @@ The campaign scenarios use separate homes under `build/campaign-tests/uw1/`:
 - `camp`: NPC rest and periodic updates run from either character's context without
   changing either avatar's health, AI flags or position; ordinary NPCs still receive
   their native rest healing. Normal player sleep uses percentage-based healing.
+- `division`: compare the port's texture-projection and smooth-clipping overflow
+  recovery with the original translated interrupt handlers, including repeated
+  halving and zero-divisor recovery, flags and emulated stack balance.
 
 `tools/uw1-playthrough.py` also runs a persistent campaign in isolated homes under
 `build/uw1-playthrough/`. It uses the packaged UW1 executable, original game data,
@@ -335,6 +339,21 @@ an extra look click that could leave a text prompt ahead of the next offer. The 
 campaign verified the rune-panel rejection and the original talisman barter retry.
 Conversation cursor placement uses the native right-button inventory action, as
 verified when the host received and saved the Standard of Honor.
+
+The party also solved the original gold/silver switch sequence in the Maze of
+Silas, recovered Sir Ingvar's plate and mace, and transferred both through the
+shared world to the host. Dorna accepted the plate and opened the shared armory;
+the host equipped its original plate armor. The isolated northwest towers remain
+for the later prison route rather than being reachable from this maze.
+
+A subsequent maze crossing stopped the native renderer with an interrupt return
+on a near-call frame. The port's divide-fault adapter omitted the texture projection
+and smooth clipping handlers that return with IRET. It now executes those original
+translated handlers and resumes after the faulting divide, including recursive
+smooth-clipping retries. `--campaign division` compares the adapter's registers,
+flags and stack with the original handlers; it reproduces the missing-handler
+failure before the repair and passes afterwards. The complete campaign remains
+in progress.
 
 Both Windows binaries build. These scenarios supply prerequisites and call native
 handlers or drive native input; they are **not a completed start-to-finish playthrough**.

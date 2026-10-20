@@ -1,8 +1,47 @@
 /* Opt-in integration scenarios, run inside the real host engine with a connected
    client. They use original level archives and native quest/puzzle handlers.
    Setup supplies prerequisites; it is not an uninterrupted campaign playthrough. */
+#include "x86/asmrt.h"
 static void campaign_require(int ok,const char *what)
 {if(!ok)port_fatal("shared campaign test: %s",what);}
+static void campaign_divide_recovery(void)
+{
+    struct asm_state saved;
+    uint8_t stack[512];
+    uint16_t handler=rw(seg063,0x4D5),scratch[2]={rw(CODE004,0x692A),rw(CODE004,0x9E1)};
+    static const uint16_t cases[][4]={
+        {0x692C,1,0,1},{0x692C,0xFFFF,0,1},
+        {0x09E5,2,0,4},{0x09E5,0xFFFD,0,4},{0x09E5,0,1,0},
+        {0x09E5,2,0,2},{0x09E5,0x7FFF,0xFFFF,1}
+    };
+    asm_save(&saved);
+    for(unsigned i=0;i<sizeof cases/sizeof cases[0];i++) {
+        uint16_t expected[5];
+        for(int reference=1;reference>=0;reference--) {
+            uint32_t result;
+            asm_restore(&saved);pSS=stack;SP=sizeof stack;BP=0x1357;
+            AX=cases[i][2];DX=cases[i][1];CX=cases[i][3];
+            CF=1;ZF=0;SF=1;OF=1;DF=0;
+            ww(seg063,0x4D5,cases[i][0]);
+            if(reference) {
+                /* Execute the original translated interrupt handler itself.
+                   The adapter must have identical registers/flags/stack after
+                   its IRET resumes the faulting two-byte divide. */
+                push16(asm_flags());push16(0x06E7+PORT_LOAD_SEG);push16(0x6168);
+                result=asm_exec(ASM_JMP(0x06E7,cases[i][0]));
+                campaign_require(result==ASM_IRET,"reference divide handler did not IRET");
+                expected[0]=AX;expected[1]=DX;expected[2]=BP;expected[3]=SP;expected[4]=asm_flags();
+            } else {
+                result=asm_divfault(0x06E7,0x6168,2);
+                fprintf(stderr,"SHARED DIVIDE handler=%04x case=%u result=%08x SP=%u expected=%u\n",cases[i][0],i,(unsigned)result,SP,expected[3]);
+                campaign_require(!result && AX==expected[0] && DX==expected[1] && BP==expected[2] && SP==expected[3] && asm_flags()==expected[4],"divide recovery differs from original interrupt handler");
+            }
+        }
+    }
+    ww(seg063,0x4D5,handler);ww(CODE004,0x692A,scratch[0]);ww(CODE004,0x9E1,scratch[1]);
+    asm_restore(&saved);
+    fprintf(stderr,"SHARED CAMPAIGN original polygon and smooth divide recovery passed\n");
+}
 static void campaign_arrive(int level,int tx,int ty)
 {
     extern char ChangeLevel(int from,int to);
@@ -188,7 +227,13 @@ static void campaign_test(void)
     if(!mode || !partner)return;
     if(!began)began=now;
     if(now-began<500)return;
-    if(!strcmp(mode,"camp")) {
+    if(!strcmp(mode,"division")) {
+        if(stage==0) {
+            campaign_divide_recovery();
+            fprintf(stderr,"SHARED CAMPAIGN division complete\n");stage=100;
+        }
+    }
+    else if(!strcmp(mode,"camp")) {
         if(stage==0){campaign_arrive(4,40,10);stage=1;return;}
         if(stage==1) {
             extern void yearly_checkup(void),update_all_critters_whilst_player_snoozes(void);
