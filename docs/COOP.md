@@ -179,8 +179,12 @@ The campaign scenarios use separate homes under `build/campaign-tests/uw1/`:
 - `ending`: the guest activates the original final exit trap; the ending cutscene
   runs once, the client receives the shared story view, both win pictures are
   dismissed and the host returns to the original menu. Host/client screenshots
-  must match below their status banners (this scenario's image check uses Pillow).
-- `terrain`: both avatars follow native slope heights and receive shore footing;
+  must match below their status banners. The image check uses Pillow and the
+  original menu pixels/palette to recognize exact title animation phases; every
+  other pixel must match.
+- `terrain`: each player's modern Space shortcut retains its own attack choice after
+  the companion chooses a different swing; both avatars follow native slope heights
+  and receive shore footing;
   movement/shake clocks remain private; friendly attacks bypass armor damage rolls;
   a quiet fixture using level 8's original lava texture damages an unprotected guest,
   respects that guest's boot protection, and preserves the host's health and equipment
@@ -213,6 +217,14 @@ friendly armor damage rolls, and an original sprite-projection stall when compan
 overlap at the camera. A previously stalled native checkpoint now reloads, and six
 subsequent saves resume with fresh frames and unchanged inventories. The opt-in
 checkpoint hook also defers object-relocating saves until an ordinary host frame.
+The continued run collected the spare original stone key and preserved it in the
+guest's inventory across native save/load. The guest crossed the shrine platforms,
+pressed the original wall button to open the shared stone door, passed underneath
+it during a descending jump, and chanted at the original shrine. Its attack skill
+rose from 15 to 19 while the host's remained 12. The shrine door requires its button;
+rejection of the red and stone keys there is original game behavior.
+The modern Space attack preference was also found to be shared between characters;
+a native regression reproduced this and now verifies separate remembered choices.
 The complete main story, all talisman acquisition routes, and optional side quests
 are still in progress; a level 1 checkpoint is not a completed campaign.
 

@@ -30,14 +30,15 @@ extern struct Object far *newPlObj;     /* the object picked, for player_3dlook 
 extern int16 attackKey;                 /* combat/COMBAT.C: the key held to charge a blow */
 extern int16 m3dx, m3dy, m3dw, m3dh;    /* ui/MOUSE.C: the 3D view (m3dy its bottom edge) */
 
-static int last_attack = 6;             /* slash, until . ; or p choose another */
+static int last_attack[2] = { 6, 6 };  /* each character's slash, until . ; or p chooses another */
 
 /* Space (type 0): attack with the last attack type; . ; p (3, 6, 9) also choose it */
 void far port_key_attack(int type)
 {
+    int which = port_shared_guest() ? 1 : 0;
     if (type)
-        last_attack = type;
-    player_attack(type ? type : last_attack);
+        last_attack[which] = type;
+    player_attack(type ? type : last_attack[which]);
     if (!type)
         attackKey = 0x39;               /* Space's scan code, held to charge, as UltimaHacks */
 }

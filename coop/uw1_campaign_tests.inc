@@ -110,6 +110,26 @@ static void campaign_autotalk(void)
     Obj_Punt(&Map_GetAddr(gx,gy)->objects,npc,1);
     fprintf(stderr,"SHARED CAMPAIGN native automatic NPC conversation for facing guest passed\n");
 }
+static void campaign_attack_choices(void)
+{
+    extern void port_key_attack(int type);
+    extern int16 pQatt,attackKey;
+    /* The modern Space shortcut must remember each player's own last attack,
+       even after the other player chooses a different swing. */
+    for(int owner=1;owner>=0;owner--) {
+        seat(owner);player->drawn=1;clear_fight_state();weap_frame=-1;
+        port_key_attack(owner?3:9);
+        campaign_require(pQatt==(owner?-3:-2),"explicit attack choice failed");
+        clear_fight_state();
+    }
+    for(int owner=1;owner>=0;owner--) {
+        seat(owner);weap_frame=-1;port_key_attack(0);
+        campaign_require(pQatt==(owner?-3:-2) && attackKey==0x39,"companion overwrote remembered Space attack");
+        player->drawn=0;clear_fight_state();weap_frame=-1;
+    }
+    seat(0);
+    fprintf(stderr,"SHARED CAMPAIGN private modern attack selection passed\n");
+}
 static void campaign_test(void)
 {
     extern void mantra_advance(void);
@@ -276,6 +296,7 @@ static void campaign_test(void)
         static uint64_t phase;
         extern unsigned char tsteps,combEfflen,tremEfflen;
         if(stage==0) {
+            campaign_attack_choices();
             int dry=0;
             for(int i=0;i<TXM_FLOORS;i++)if(((TxmTerr[i]>>4)&3)==0){dry=i;break;}
             for(int y=38;y<=44;y++)for(int x=38;x<=45;x++) {

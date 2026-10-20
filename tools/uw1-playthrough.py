@@ -162,6 +162,26 @@ def checkpoint(label):
         shutil.copy(OUT/(role+'.log'),destination/(role+'.log'))
 
 
+def restore(slot=1):
+    """Restore through the host's original Ctrl+R menu."""
+    if not 1<=slot<=4:raise ValueError('Native save slots are 1 to 4')
+    before=state()
+    if before['screen']!=0 or before['story'] or before['modal']>=0:
+        raise RuntimeError('Close the native dialog before restoring')
+    log=OUT/'host.log';offset=log.stat().st_size
+    command('host','key',KEYS['ctrl'],1)
+    try:key('host','r')
+    finally:command('host','key',KEYS['ctrl'],0)
+    click('host',20,34+15*(slot-1))
+    for _ in range(100):
+        current=state()
+        with log.open('rb') as stream:
+            stream.seek(offset);restored=b'independent character restored' in stream.read()
+        if restored and current['frame']>before['frame'] and not current['story'] and current['modal']<0:return
+        time.sleep(.1)
+    raise RuntimeError('Native restore did not resume gameplay')
+
+
 def inventory_signature(s):
     objects={o['index']:o for o in s['objects']}
     def item(index,seen):
@@ -187,6 +207,38 @@ def inventory_drag(role,index,destination):
     command(role,'pointer',*slot_point(slot),2);time.sleep(.6)
     command(role,'pointer',*destination,2);time.sleep(.35)
     command(role,'pointer',*destination,0);time.sleep(.25)
+
+
+def closed_door(s,tile):
+    pos=positions(s)
+    return next((o for o in s['objects']
+                 if pos.get(o['index'])==tile and 0x140<=o['item']<0x148),None)
+
+
+def unlock(role,index):
+    """Try carried, visible keys through the native two-object Use action."""
+    s=state();which=role=='client';tile=positions(s)[index]
+    objects={o['index']:o for o in s['objects']}
+    slots=[i for i,n in enumerate(s['characters'][which]['inventory'])
+           if n and n in objects and 0x101<=objects[n]['item']<0x10f]
+    for slot in slots:
+        door=closed_door(state(),tile)
+        if door is None:return True
+        if not any(t['index']==door['index'] for t in targets(role)):
+            raise RuntimeError('Face the closed door before selecting a key')
+        mode(role,1);click(role,*slot_point(slot))
+        if state()['characters'][which]['input_mode']!=2:
+            raise RuntimeError('The native key did not enter target mode')
+        interact(role,door['index']);time.sleep(.2)
+        if state()['characters'][which]['input_mode']==2:
+            raise RuntimeError('The native key target is still pending')
+        door=closed_door(state(),tile)
+        if door is None:return True
+        interact(role,door['index'])
+        for _ in range(20):
+            if closed_door(state(),tile) is None:return True
+            time.sleep(.1)
+    return False
 
 
 def barter_offer(role,index,count=None,slot=0):
@@ -390,9 +442,31 @@ def go(role,x,y,engage=False,jumping=False):
             target=waypoint
             tx,ty=point(target);dx,dy=tx-px,ty-py
             if jumping and max(abs(target[0]-start[0]),abs(target[1]-start[1]))==2 and jumped_for!=target:
-                if held:command(role,'key',KEYS[held],0);held=None
+                if closed_door(s,target[:2]):
+                    raise RuntimeError(f'Open the landing door at {target[:2]} before jumping')
+                object_tiles=positions(s)
+                if any(o['item']==0x14d and object_tiles.get(o['index'])==target[:2]
+                       and o['z']/8-height(target)<23/8+2.5 for o in s['objects']):
+                    raise RuntimeError('The raised stone door needs an earlier native takeoff to clear its underside')
+                release_movement(role);held=None
                 face(role,math.degrees(math.atan2(dx,dy)))
-                command(role,'key',KEYS['w'],1);held='w';key(role,'j');jumped_for=target
+                # Modern keys' Ctrl+Shift is the native standing long jump.
+                # A short forward walk followed by lowercase j only jumps
+                # with the walk speed, which cannot clear a whole water tile.
+                command(role,'key',KEYS['ctrl'],1);command(role,'key',KEYS['shift'],1);time.sleep(.2)
+                command(role,'key',KEYS['shift'],0);command(role,'key',KEYS['ctrl'],0)
+                command(role,'key',KEYS['w'],1);held='w';jumped_for=target
+                for _ in range(20):
+                    airborne=state()['characters'][which]
+                    if not airborne.get('grounded',True):break
+                    time.sleep(.05)
+                else:raise RuntimeError('The native long jump did not leave the ground')
+                continue
+            if jumped_for==target and not c.get('grounded',True):
+                # Input acknowledgement precedes simulation. Keep the original
+                # takeoff movement until landing, rather than slowing in midair
+                # using a stale pre-jump snapshot or a nearby waypoint.
+                time.sleep(.1);continue
             if target[:2]==(x,y) and max(abs(dx),abs(dy))<.18 and abs(height(target)-c['z']/64)<.5:break
             if 2<=s['tiles'][target[0]+target[1]*64][0]<=5 and start!=target[:2]:
                 if start[1]==target[1] and abs(dy)>.10:
@@ -401,17 +475,13 @@ def go(role,x,y,engage=False,jumping=False):
                 if start[0]==target[0] and abs(dx)>.10:
                     if held:command(role,'key',KEYS[held],0);held=None
                     face(role,90 if dx>0 else 270);key(role,'x',min(.25,abs(dx)/1.5));continue
-            objs={o['index']:o for o in s['objects']};index=s['tiles'][target[0]+target[1]*64][4]
-            door=None;seen=set()
-            while index and index in objs and index not in seen:
-                seen.add(index);o=objs[index]
-                if 0x140<=o['item']<0x148:door=o;break
-                index=o['next']
-            if door and max(abs(dx),abs(dy))<1.6:
+            door=closed_door(s,target[:2])
+            if door and c.get('grounded',True) and max(abs(dx),abs(dy))<1.6:
                 if held:command(role,'key',KEYS[held],0);held=None
                 face_object(role,door['index']);interact(role,door['index']);time.sleep(.5)
-                changed=next(o for o in state()['objects'] if o['index']==door['index'])
-                if changed['item']<0x148:raise RuntimeError(f'Locked door {door["index"]} at {target}')
+                changed=closed_door(state(),target[:2])
+                if changed and not unlock(role,changed['index']):
+                    raise RuntimeError(f'Locked door {door["index"]} at {target}')
                 continue
             drop=height(target)-c['z']/64<-1
             if drop and jumped_for!=target:
@@ -421,7 +491,7 @@ def go(role,x,y,engage=False,jumping=False):
             forward=dy*math.cos(angle)+dx*math.sin(angle)
             right=dx*math.cos(angle)-dy*math.sin(angle)
             wet=bool(c.get('terrain',2 if s['tiles'][start[0]+start[1]*64][2]==1 else 1)&(2|32))
-            if wet and (abs(right)>abs(forward)*.35 or forward<0):
+            if (wet or (drop and c.get('grounded',True))) and (abs(right)>abs(forward)*.35 or forward<0):
                 if held:command(role,'key',KEYS[held],0);held=None
                 face(role,math.degrees(math.atan2(dx,dy)));continue
             sideways=abs(right)>abs(forward)
@@ -494,7 +564,9 @@ def main():
     p=sub.add_parser('pointer');p.add_argument('role',choices=['host','client']);p.add_argument('x',type=int);p.add_argument('y',type=int);p.add_argument('buttons',type=int,nargs='?',default=0)
     p=sub.add_parser('shot');p.add_argument('role',choices=['host','client'])
     sub.add_parser('save')
+    p=sub.add_parser('restore');p.add_argument('--slot',type=int,choices=range(1,5),default=1)
     p=sub.add_parser('go');p.add_argument('role',choices=['host','client']);p.add_argument('x',type=int);p.add_argument('y',type=int)
+    p.add_argument('--engage',action='store_true');p.add_argument('--jumping',action='store_true')
     p=sub.add_parser('face');p.add_argument('role',choices=['host','client']);p.add_argument('degrees',type=float)
     args=parser.parse_args()
     if args.action=='run':run(args.data,args.duration,args.resume,args.chargen,args.binary)
@@ -503,7 +575,8 @@ def main():
     elif args.action=='pointer':command(args.role,'pointer',args.x,args.y,args.buttons)
     elif args.action=='shot':command(args.role,'shot')
     elif args.action=='save':command('host','save')
-    elif args.action=='go':go(args.role,args.x,args.y)
+    elif args.action=='restore':restore(args.slot)
+    elif args.action=='go':go(args.role,args.x,args.y,args.engage,args.jumping)
     elif args.action=='face':face(args.role,args.degrees)
 
 

@@ -11,6 +11,27 @@ import subprocess
 ROOT=Path(__file__).resolve().parents[1]
 
 
+def check_ending_pictures(data, paths):
+    from PIL import Image, ImageChops
+    frames=[Image.open(path).convert('RGB').crop((0,9,320,200)) for path in paths]
+    if ImageChops.difference(*frames).getbbox() is None:return
+    # MAINMENU.C rotates palette entries 0x40..0x7F every 14 ticks.
+    # Match each screenshot to an exact phase of the original title pixels,
+    # then compare every remaining pixel without a timing-dependent tolerance.
+    title=(data/'DATA/OPSCR.BYT').read_bytes()
+    palette=(data/'DATA/PALS.DAT').read_bytes()[2*768:3*768]
+    assert len(title)==64000 and len(palette)==768, 'Original menu data is incomplete'
+    colors=[tuple((v<<2)|(v>>4) for v in palette[i*3:i*3+3]) for i in range(64,128)]
+    points=[(x,y-9,title[y*320+x]-64) for y in range(9,200) for x in range(320)
+            if 64<=title[y*320+x]<128]
+    assert points, 'Original title has no cycling pixels'
+    for frame in frames:
+        assert any(all(frame.getpixel((x,y))==colors[(index-phase)%64] for x,y,index in points)
+                   for phase in range(64)), 'Ending/menu title does not match an original palette phase'
+        for x,y,index in points:frame.putpixel((x,y),colors[index])
+    assert ImageChops.difference(*frames).getbbox() is None, 'Host/client displayed different ending/menu pictures'
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data',type=Path,required=True)
@@ -28,7 +49,7 @@ def main():
     args=parser.parse_args()
     if args.characters and args.game!='uw1':parser.error('--characters is UW1-only')
     if args.resume:args.characters=True
-    if args.chargen:args.stationary=True
+    if args.chargen or args.characters:args.stationary=True
     if args.campaign:
         if args.game!='uw1':parser.error('--campaign is UW1-only')
         args.stationary=True
@@ -139,18 +160,7 @@ def main():
         if args.campaign=='ending':
             assert host.count('SHARED SCENE 1 begin')==1 and 'SHARED SCENE 1 completed' in host, 'Ending scene did not complete exactly once'
             assert 'SHARED ENDING win1 loaded' in host and 'SHARED ENDING win2 with character stats loaded' in host, 'Native win pictures/stats were not loaded'
-            from PIL import Image, ImageChops
-            frames=[Image.open(out/(role+'.png')).convert('RGB').crop((0,9,320,200)) for role in ('host','client')]
-            difference=ImageChops.difference(*frames)
-            if difference.getbbox():
-                # The menu title cycles its gold palette continuously. Two PNGs
-                # taken at the same process age can differ by one streamed frame.
-                # Require every other menu pixel to match, and limit title drift
-                # to one small palette step rather than accepting a wrong view.
-                title=(20,23,300,54)  # original menu coordinates (20,32)..(300,63)
-                outside=difference.copy();outside.paste((0,0,0),title)
-                assert outside.getbbox() is None, 'Host/client displayed different ending/menu pictures'
-                assert max(hi for lo,hi in difference.getextrema())<=16, 'Host/client title palette drifted beyond one frame'
+            check_ending_pictures(args.data,[out/(role+'.png') for role in ('host','client')])
         if args.campaign in ('quests','ending'):
             assert 'SHARED STORY displayed frames=' in client, 'Client did not accept the shared story view'
     report={'game':args.game,'handshake':'passed','second_avatar':'passed',
