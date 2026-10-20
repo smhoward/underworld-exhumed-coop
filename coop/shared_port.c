@@ -76,7 +76,7 @@ extern unsigned char DoAnimO;
 extern char in_game;
 unsigned char IsMobElem(struct Object *object);
 #if COOP_GAME != 1
-unsigned char find_good_x_and_y(struct Object *obj,int x,int y,int16 *outx,int16 *outy,int loose);
+unsigned char find_good_x_and_y(struct Object *obj,int x,int y,int16 *outx,int16 *outy,int clear);
 #endif
 void player_setup(int x,int y,int how);
 struct seat_state {
@@ -101,6 +101,43 @@ static int companion_health=-1;
 static void seat(int next);
 static void state(struct seat_state *s,int save);
 static uint64_t shared_now(void);
+static int placement_guard;
+static const struct Object *placement_other;
+static int shared_spawn_tile_safe(int x,int y)
+{
+#if COOP_GAME == 1
+    struct Object *obj;unsigned count=0;
+    if(x<1 || x>62 || y<1 || y>62)return 0;
+    for(obj=Obj_PtrTMem(&mapdata[x+y*64].objects);obj;obj=Obj_PtrTMem(&obj->qn.link)) {
+        if(++count>1024)return 0;
+        if((obj->id&ID_FLAG11) &&
+           (OBJ_ITEM(obj)==ITEM_MOVE_TRIGGER || OBJ_ITEM(obj)==ITEM_STEP_ON_TRIGGER))return 0;
+    }
+#else
+    (void)x;(void)y;
+#endif
+    return 1;
+}
+int port_shared_placement_ok(int x,int y)
+{
+    if(!placement_guard)return 1;
+    if(placement_other && x==OBJ_HOMEX(placement_other) && y==OBJ_HOMEY(placement_other))return 0;
+    return shared_spawn_tile_safe(x,y);
+}
+static int shared_find_position(struct Object *obj,int x,int y,int16 *outx,int16 *outy,int separate)
+{
+    int found;const struct Object *old_other=placement_other;
+    /* Keep the native connected search, but do not materialize a companion on
+       a return stair or another player movement trigger. Ordinary teleports
+       and all non-co-op callers retain their original placement rules. */
+    placement_guard++;
+    placement_other=separate ? (obj==critdata+1 ? partner : critdata+1) : NULL;
+    found=find_good_x_and_y(obj,x,y,outx,outy,0);
+    /* Prefer separate visible avatars, allowing harmless overlap only when
+       the native search finds no other safe space in the connected area. */
+    if(!found){placement_other=NULL;found=find_good_x_and_y(obj,x,y,outx,outy,0);}
+    placement_other=old_other;placement_guard--;return found;
+}
 #if COOP_GAME == 1
 static void bot_snapshot(void);
 #include "uw1_characters.inc"
@@ -223,7 +260,7 @@ void port_shared_before_save(void)
 }
 static int spawn(void)
 {
-    int16 x,y;
+    int16 x,y;int separate=1;
     int resume=resume_guest && resume_level==PlayerLevel;
 #if COOP_GAME == 1
     int keep_position=resume || (character_image_length && character_level==PlayerLevel);
@@ -245,15 +282,26 @@ static int spawn(void)
 #if COOP_GAME == 1
     character_join();
     placement=PN;facing=PlayerFacing;
+    /* Preserve a valid saved position, including legal overlap in a corridor.
+       Relocation from an unsafe saved trigger still prefers separate space. */
+    separate=!keep_position || !shared_spawn_tile_safe(PN.x/256,PN.y/256);
 #endif
-    if(!find_good_x_and_y(partner,PN.x/256,PN.y/256+
+    if(!shared_find_position(partner,PN.x/256,PN.y/256+
 #if COOP_GAME == 1
        (keep_position ? 0 : 1),
 #else
        (resume ? 0 : 1),
 #endif
-       &x,&y,0) &&
-       !find_good_x_and_y(partner,PN.x/256,PN.y/256,&x,&y,1)) {seat(0);Obj_Free(partner);partner=NULL;return 0;}
+       &x,&y,separate) &&
+       !shared_find_position(partner,PN.x/256,PN.y/256,&x,&y,separate)) {
+#if COOP_GAME == 1
+        /* Keep the unpacked inventory if there is temporarily no free spot. */
+        character_detach();
+#else
+        seat(0);
+#endif
+        Obj_Free(partner);partner=NULL;return 0;
+    }
     player_setup(x,y,1);PN.index=Obj_MemTPtr(partner);
 #if COOP_GAME == 1
     if(keep_position && x==placement.x/256 && y==placement.y/256) {
@@ -303,6 +351,20 @@ void port_shared_guest_physics(void)
 #if COOP_GAME == 1
     if(player->motion_state)parse_effect();
     make_noise(0);
+#endif
+}
+void port_shared_text(const char *message)
+{
+#if COOP_GAME == 1
+    FILE *fp;
+    if(!enabled || port_coop_role()!=COOP_HOST || !in_game || !getenv("UW_COOP_BOT_HOME"))return;
+    fp=port_bot_open("messages.jsonl","ab");if(!fp)return;
+    fprintf(fp,"{\"time\":%llu,\"seat\":%d,\"screen\":%d,\"scroll\":%d,\"npc\":%u,\"text\":",
+        (unsigned long long)shared_now(),atomic_load(&active_seat),scrnum,scroll_mode,
+        scrnum==2 && talking_to ? talking_to->whoami : 0);
+    bot_string(fp,message);fprintf(fp,"}\n");fclose(fp);
+#else
+    (void)message;
 #endif
 }
 void port_shared_scroll(void)

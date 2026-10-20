@@ -306,7 +306,9 @@ int port_shared_death(void)
     /* A live companion keeps the adventure going; no items are created or copied. */
     player_get_exp(-(int)(player->exp>>3));player->poison=0;
     ThePlayer->hp=playerdat->avghit/4+1;
-    if(find_good_x_and_y(ThePlayer,OBJ_HOMEX(other),OBJ_HOMEY(other),&x,&y,1))player_setup(x,y,1);
+    /* The native "clear" search can cull living plot NPCs without their death
+       scripts. A rescue must find space without deleting the shared world. */
+    if(shared_find_position(ThePlayer,OBJ_HOMEX(other),OBJ_HOMEY(other),&x,&y,1))player_setup(x,y,1);
     scroll_print("Your companion brings you back to your feet.\n");editchng(0x7FFE);return 1;
 }
 
@@ -386,6 +388,9 @@ static void character_test(void)
         fprintf(stderr,"SHARED CHARACTERS individual inventories, stats, mana, spells, quests, rewards passed\n");stage=1;
     }
     if(stage==1 && now-began>=1500) {
+        /* Legal corridor overlap must retain its exact saved physics position. */
+        seat(1);player_setup(32,2,1);PN.x+=48;PN.y-=32;
+        SET_FINEX_UNSIGNED(ThePlayer,(PN.x>>5)&7);SET_FINEY(ThePlayer,(PN.y>>5)&7);seat(0);
         character_test_require(SavePlayerInv("SAVE0\\"),"host save failed");
         character_test_require(SaveLevel(PlayerLevel),"world save failed");player_setup(32,2,1);
         if(access("SAVE1",0))character_test_require(mkdir("SAVE1")==0,"save slot create failed");
@@ -398,7 +403,9 @@ static void character_test(void)
         fprintf(stderr,"SHARED CHARACTERS campaign restore requested\n");stage=3;return;
     }
     if(stage==3) {
-        seat(1);character_test_inventory();seat(0);
+        seat(1);character_test_inventory();
+        character_test_require(PN.x==32*256+128+48 && PN.y==2*256+128-32,"safe overlapping save moved the guest");seat(0);
+        fprintf(stderr,"SHARED CHARACTERS safe overlapping save restores exact guest position passed\n");
         character_test_require(playerdat->attr[0]==23 && player->play_mana==9 && player->quests==QUEST_BIT(QUEST_RODRICK),"host campaign restore lost state");
         fprintf(stderr,"SHARED CHARACTERS save/load restored both characters and world\n");stage=4;
     }
@@ -409,12 +416,31 @@ static void character_test(void)
         stage=5;
     }
     if(stage==5 && PlayerLevel==2) {
+        struct Object *gazer;struct Tile *tile;int index;
         seat(1);character_test_inventory();seat(0);
         character_test_require(AskInventory(11) && OBJ_ITEM(AskInventory(11))==ITEM_LOAF_OF_BREAD_B1,"travel lost host inventory");
         fprintf(stderr,"SHARED CHARACTERS guest travel preserved both inventories\n");
+        /* Reproduce the campaign failure: a live gazer occupies the companion's
+           tile when the other character needs rescue. The old clearing search
+           deleted it at 31 HP and Goldthirst could never award the gem cutter. */
+        gazer=CreateObj(ITEM_GAZER,1);character_test_require(gazer!=NULL,"revival gazer allocation failed");
+        index=Obj_MemTPtr(gazer);gazer->whoami=0x6E;gazer->hp=31;
+        SET_HOMEX(gazer,OBJ_HOMEX(ThePlayer));SET_HOMEY(gazer,OBJ_HOMEY(ThePlayer));
+        SET_FINEX(gazer,3);SET_FINEY(gazer,3);SET_Z(gazer,OBJ_Z(ThePlayer));
+        tile=Map_GetAddr(OBJ_HOMEX(ThePlayer),OBJ_HOMEY(ThePlayer));Obj_Add(&tile->objects,gazer);
         seat(1);ThePlayer->hp=0;character_test_require(port_shared_death(),"guest death ended living host's game");
-        character_test_require(ThePlayer->hp>0,"guest revival failed");seat(0);
-        fprintf(stderr,"SHARED CHARACTERS companion revival passed\n");stage=6;
+        character_test_require(ThePlayer->hp>0,"guest revival failed");
+        character_test_require(Obj_Find(&tile->objects,1,index)==gazer && gazer->hp==31 && gazer->whoami==0x6E,"revival deleted or changed a living plot NPC");
+        damage_item(gazer,ThePlayer,OBJ_HOMEX(gazer),OBJ_HOMEY(gazer),31,DMG_PHYSICAL);
+        character_test_require(gazer->hp==0,"native gazer killing blow failed");seat(0);
+        fprintf(stderr,"SHARED CHARACTERS companion revival preserves living plot NPCs\n");stage=60;
+    }
+    if(stage==60) {
+        if(!(player->quests&QUEST_BIT(QUEST_GAZER))) {
+            character_test_require(now-began<15000,"native gazer death failed to complete its quest after revival");return;
+        }
+        seat(1);character_test_require(player->quests&QUEST_BIT(QUEST_GAZER),"gazer quest failed to reach companion");seat(0);
+        fprintf(stderr,"SHARED CHARACTERS native gazer death after revival completes shared quest\n");stage=6;
     }
     if(stage==6) {
         unsigned host_mana=player->max_mana,guest_mana=characters[1].record.max_mana;
@@ -422,12 +448,26 @@ static void character_test(void)
         character_test_require(characters[1].record.max_mana==0 && player->max_mana==host_mana,"Tybal restriction crossed characters");
         port_shared_level_hacks(LEVEL_TYBAL,1);
         character_test_require(characters[1].record.max_mana==guest_mana,"Tybal restriction lost guest mana");
-        fprintf(stderr,"SHARED CHARACTERS Tybal mana rules passed\n");stage=7;
+        fprintf(stderr,"SHARED CHARACTERS Tybal mana rules passed\n");
         {struct Player isolated=*player,changed=*player;
          isolated.orb=0;isolated.max_mana=0;isolated.saved_mana=35;isolated.saved_level=LEVEL_TYBAL;changed.orb=1;
          campaign_copy(&isolated,&changed);
          character_test_require(isolated.max_mana==35 && isolated.play_mana==35,"shared orb lost private mana reserve");
          fprintf(stderr,"SHARED CHARACTERS shared orb restored private mana passed\n");}
+        /* The real level-2 royal stairs arrive at (5,2). Placing the guest one
+           square north used to put it directly on level 3's return trigger. */
+        seat(1);character_test_require(do_teleport(ThePlayer,5,2,3)==0x10,"royal stair arrival failed");
+        NewPlyFade=0;npp_func=NULL;
+        character_test_require(port_shared_guest_travel(),"royal stair guest travel was not handed to host");seat(0);character_travel();
+        stage=61;return;
+    }
+    if(stage==61 && PlayerLevel==3) {
+        character_test_require(shared_spawn_tile_safe(OBJ_HOMEX(partner),OBJ_HOMEY(partner)),"companion spawned on the original return stair trigger");
+        character_test_require(OBJ_HOMEX(partner)!=OBJ_HOMEX(ThePlayer) || OBJ_HOMEY(partner)!=OBJ_HOMEY(ThePlayer),"royal stair arrival overlapped avatars despite safe space");
+        seat(1);character_test_inventory();seat(0);
+        character_test_require(player->quests==(QUEST_BIT(QUEST_RODRICK)|QUEST_BIT(QUEST_GAZER)),"royal stairs lost shared quests");
+        fprintf(stderr,"SHARED CHARACTERS original royal stair arrival avoids return trigger passed\n");
+        fprintf(stderr,"SHARED CHARACTERS level sweep 3 inventories and quests passed\n");stage=8;
     }
     if(stage>=7 && stage<=14) {
         int to=stage==14 ? 1 : stage-4,found=0,tx,ty;int16 x,y;
@@ -440,7 +480,7 @@ static void character_test(void)
     }
     if(stage>=27 && stage<=34) {
         seat(1);character_test_inventory();seat(0);
-        character_test_require(player->quests==QUEST_BIT(QUEST_RODRICK) && player->game_vars[23]==12,"level sweep lost shared quests");
+        character_test_require(player->quests==(QUEST_BIT(QUEST_RODRICK)|QUEST_BIT(QUEST_GAZER)) && player->game_vars[23]==12,"level sweep lost shared quests");
         fprintf(stderr,"SHARED CHARACTERS level sweep %d inventories and quests passed\n",PlayerLevel);
         stage-=19;
         if(stage==15)fprintf(stderr,"SHARED CHARACTERS all nine levels and return passed\n");

@@ -200,10 +200,14 @@ char far damage_item(struct Object far *obj, struct Object far *who, int x, int 
 
 #ifndef __TURBOC__
 #undef damage_item
+#include <stdio.h>
 char far damage_item(struct Object far *obj,struct Object far *who,int x,int y,
                      unsigned char damage,unsigned char type)
 {
     int old=port_shared_context(Obj_MemTPtr(obj));
+    if(getenv("UW_COOP_BOT_HOME") && port_shared_avatar(obj) && damage)
+        fprintf(stderr,"SHARED DAMAGE target=%d source=%d amount=%u type=%u at=%d,%d hp=%u\n",
+            Obj_MemTPtr(obj),who?Obj_MemTPtr(who):0,damage,type,x,y,obj->hp);
     char result=shared_damage_item(obj,who,x,y,damage,type);
     port_shared_context_end(old);return result;
 }

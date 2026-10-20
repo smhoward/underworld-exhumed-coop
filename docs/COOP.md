@@ -250,8 +250,38 @@ health and guest at 19/40 now have full and partial bottles respectively.
 The playthrough driver observes landing before releasing a native long jump, permits
 walking back from ledge overhangs using the observed footing height, and waits for
 complete native PNG writes before storing checkpoint screenshots.
+The continued native run completed Korianous's platform route in both directions,
+recovered its coffer, defeated the optional skeleton, equipped its chain cowl on the
+guest, and descended through the privy with both inventories intact. On level 2 the
+party collected the red gem key, heard Corby's clues, cleared the mine cave-in with
+an original rock hammer, defeated the gazer, and received Goldthirst's gemcutter and
+treasury password. Ironwit accepted his actual blueprint scroll and awarded a flight
+potion. The host crossed the storeroom gap using the original potion while the guest
+remained grounded, and learned Uus without changing the guest's runes. These items,
+private inventories and shared quests also survived a fresh-process restore.
+The host then transferred Ironwit's reward through the world to the guest, who used
+it to collect fifty original treasury coins and fly back out without taking damage;
+the host remained on the gallery without a flight effect.
+
+The gazer fight exposed a campaign soft-lock: companion revival called the native
+placement search with its destructive clearing option. It removed the living plot
+NPC at 31 HP without running its death quest, leaving Goldthirst's reward unavailable.
+Revival and companion spawn now use non-destructive placement. A native regression
+preserves a living gazer beside the companion, kills it through the normal damage and
+death handlers, and checks that its quest reaches both characters. Replaying the actual
+pre-fight campaign save also completed the fight and reward successfully.
+
+The original royal stairs exposed another placement issue on level 3: the guest's
+preferred adjacent tile was the return-stair trigger. Its first movement sent the
+whole party back to level 2. Companion spawn and rescue now retain the native search
+while excluding player movement-trigger tiles and preferring space separate from the
+other avatar. Ordinary teleport placement is unchanged. The native regression uses
+that exact arrival, and the saved campaign replay verifies visible, separate avatars
+in both cameras and guest movement that remains on level 3.
+
 The complete main story, all talisman acquisition routes, and optional side quests
-are still in progress; a level 1 checkpoint is not a completed campaign.
+are still in progress. The persistent campaign is on level 3 with no talismans acquired;
+the remaining routes and ending have not been completed in this run.
 
 Both Windows binaries build. These scenarios supply prerequisites and call native
 handlers or drive native input; they are **not a completed start-to-finish playthrough**.

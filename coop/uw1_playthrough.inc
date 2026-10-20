@@ -97,18 +97,19 @@ static void bot_state(void)
         for(int slot=0;slot<NUM_INV_SLOTS;slot++)fprintf(fp,"%s%d",slot?",":"",inv[slot].f.index);
         fprintf(fp,"],\"input_mode\":%d,\"interaction\":%d,\"pitch\":%d,\"lefty\":%u,\"hunger\":%u,\"fatigue\":%u,\"name\":",s==atomic_load(&active_seat)?GameInputMode:characters[s].inputmode,s==atomic_load(&active_seat)?RightButtonThing:characters[s].button,seats[s].pitch,p->lefty,p->hunger,p->fatigue);
         bot_string(fp,p->name);
-        fprintf(fp,",\"attributes\":[%u,%u,%u],\"skills\":[",cr->attr[0],cr->attr[1],cr->attr[2]);
+        fprintf(fp,",\"experience_level\":%u,\"skill_points\":%u,\"max_mana\":%u,\"light\":%u,\"poison\":%u,\"swim_count\":%u,\"attributes\":[%u,%u,%u],\"skills\":[",p->level,p->skill_points,p->max_mana,p->light,p->poison,p->swim_count,cr->attr[0],cr->attr[1],cr->attr[2]);
         for(int k=0;k<NUM_SKILLS;k++)fprintf(fp,"%s%u",k?",":"",p->skills[k]);
         fprintf(fp,"],\"runes\":[%u,%u,%u],\"quest_bytes\":[%u,%u,%u,%u],\"game_vars\":[",p->runebag[0],p->runebag[1],p->runebag[2],p->quest_bytes[0],p->quest_bytes[1],p->quest_bytes[2],p->quest_bytes[3]);
         for(int k=0;k<64;k++)fprintf(fp,"%s%u",k?",":"",p->game_vars[k]);
+        fprintf(fp,"],\"active_spells\":%u,\"spells\":[%u,%u,%u],\"motion_effects\":%u",p->active_spells,p->spells[0],p->spells[1],p->spells[2],s==atomic_load(&active_seat)?motionbits:seats[s].motion);
         const struct Phys *phys=s==atomic_load(&active_seat)?&PN:&seats[s].physics;
-        fprintf(fp,"],\"motion_state\":%u,\"grounded\":%d,\"terrain\":%u,\"movement_input\":%d,\"velocity\":[%d,%d,%d],\"acceleration\":[%d,%d,%d]",p->motion_state,!(phys->terrain&FOOT_AIR),phys->terrain,s==atomic_load(&active_seat)?PlayerInput:seats[s].input,phys->vel[0],phys->vel[1],phys->vel[2],phys->acc[0],phys->acc[1],phys->acc[2]);
+        fprintf(fp,",\"motion_state\":%u,\"grounded\":%d,\"terrain\":%u,\"movement_input\":%d,\"velocity\":[%d,%d,%d],\"acceleration\":[%d,%d,%d]",p->motion_state,!(phys->terrain&FOOT_AIR),phys->terrain,s==atomic_load(&active_seat)?PlayerInput:seats[s].input,phys->vel[0],phys->vel[1],phys->vel[2],phys->acc[0],phys->acc[1],phys->acc[2]);
         fprintf(fp,",\"drawn\":%u,\"attack\":[%d,%d,%d]}",p->drawn,bot_attacks[s][0],bot_attacks[s][1],bot_attacks[s][2]);
     }
     fprintf(fp,"],\"menu\":[");for(int k=1;k<=port_bot_menu_count();k++){if(k>1)fputc(',',fp);bot_string(fp,port_bot_menu_option(k));}
     fprintf(fp,"],\"host_keyboard\":[");for(int k=0;k<128;k++)fprintf(fp,"%s%u",k?",":"",key_on[k]);
     fprintf(fp,"],\"tiles\":[");
-    for(int i=0;i<4096;i++)fprintf(fp,"%s[%u,%u,%u,%u,%u]",i?",":"",mapdata[i].type,mapdata[i].height,mapdata[i].floor<TXM_FLOORS ? (unsigned)(TxmTerr[mapdata[i].floor]>>4) : 0,mapdata[i].door,mapdata[i].objects.f.index);
+    for(int i=0;i<4096;i++)fprintf(fp,"%s[%u,%u,%u,%u,%u,%u]",i?",":"",mapdata[i].type,mapdata[i].height,mapdata[i].floor<TXM_FLOORS ? (unsigned)(TxmTerr[mapdata[i].floor]>>4) : 0,mapdata[i].door,mapdata[i].objects.f.index,mapdata[i].floor);
     fprintf(fp,"],\"objects\":[");
     /* Export linked world objects and inventories, never free pool records. */
     int first=1;unsigned queue[2048],n=0;
@@ -122,8 +123,8 @@ static void bot_state(void)
         fprintf(fp,"%s{\"index\":%u,\"item\":%u,\"name\":",first?"":",",index,item);first=0;
         bot_string(fp,get_string(item|STR_OBJNAMES));
         fprintf(fp,",\"npc_name\":");bot_string(fp,mob && o->whoami && o->whoami<0xF0 ? get_string((o->whoami+0x10)|STR_CONV) : "");
-        fprintf(fp,",\"fate\":%u,\"solid\":%u,\"radius\":%u,\"height\":%u",ComObjData[item].fate,ComObjData[item].solid,ComObjData[item].radius,ComObjData[item].height);
-        fprintf(fp,",\"x\":%u,\"y\":%u,\"z\":%u,\"next\":%u,\"link\":%u,\"owner\":%u,\"flags\":%u,\"quantity\":%u,\"who\":%u,\"hp\":%u,\"goal\":%u}",mob?OBJ_HOMEX(o):0,mob?OBJ_HOMEY(o):0,OBJ_Z(o),o->qn.f.next,OBJ_LINK(o),OBJ_OWNER(o),o->id,OBJ_ISQUANT(o),mob?o->whoami:0,mob?o->hp:OBJ_QUALITY(o),mob?OBJ_GOAL(o):0);
+        fprintf(fp,",\"fate\":%u,\"solid\":%u,\"radius\":%u,\"height\":%u,\"position\":%u",ComObjData[item].fate,ComObjData[item].solid,ComObjData[item].radius,ComObjData[item].height,o->pos);
+        fprintf(fp,",\"x\":%u,\"y\":%u,\"z\":%u,\"next\":%u,\"link\":%u,\"owner\":%u,\"flags\":%u,\"quantity\":%u,\"who\":%u,\"hp\":%u,\"goal\":%u,\"attitude\":%u,\"target\":%u}",mob?OBJ_HOMEX(o):0,mob?OBJ_HOMEY(o):0,OBJ_Z(o),o->qn.f.next,OBJ_LINK(o),OBJ_OWNER(o),o->id,OBJ_ISQUANT(o),mob?o->whoami:0,mob?o->hp:OBJ_QUALITY(o),mob?OBJ_GOAL(o):0,mob?OBJ_ATTITUDE(o):0,mob?OBJ_GTARG(o):0);
         if(o->qn.f.next && n<2048)queue[n++]=o->qn.f.next;
         if((OBJ_MAJOR(o)==MAJOR_CREATURE || (item>=0x80 && item<0x90)) && OBJ_LINK(o) && n<2048)queue[n++]=OBJ_LINK(o);
     }

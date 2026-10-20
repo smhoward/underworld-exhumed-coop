@@ -120,7 +120,13 @@ char far find_good_x_and_y(struct Object far *obj, int x, int y,
                         Obj_Punt(&tile->objects, o, 0);
                 }
             }
-            if (can_place(OBJ_ITEM(obj), Obj_MemTPtr(obj), tx * 8 + 3, ty * 8 + 3,
+            if (
+#ifndef __TURBOC__
+                /* Only shared companion spawn/rescue searches enable this guard.
+                   A second avatar must not activate an exit as soon as it moves. */
+                port_shared_placement_ok(tx, ty) &&
+#endif
+                can_place(OBJ_ITEM(obj), Obj_MemTPtr(obj), tx * 8 + 3, ty * 8 + 3,
                           (tile->height << 3) + ((tile_walls[tile->type] & 0x20) ? 4 : 0),
                           0, 8)) {
                 *nx = tx;

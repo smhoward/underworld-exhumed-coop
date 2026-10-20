@@ -21,7 +21,7 @@ KEYS.update(dict(zip('qwertyuiop',[16,17,18,19,20,21,22,23,24,25])))
 KEYS.update(dict(zip('asdfghjkl',[30,31,32,33,34,35,36,37,38])))
 KEYS.update(dict(zip('zxcvbnm',[44,45,46,47,48,49,50])))
 KEYS.update(esc=1,enter=28,space=57,shift=42,ctrl=29,alt=56,left=75,right=77,up=72,down=80,backspace=14)
-KEYS.update({'.':52,';':39})
+KEYS.update({'.':52,';':39,"'":40,'-':12})
 KEYS.update({f'f{i}':58+i for i in range(1,11)})
 
 
@@ -75,6 +75,7 @@ def mode(role,number):
 
 
 def click(role,x,y,duration=.15):
+    command(role,'pointer',x,y,0);time.sleep(.05)
     command(role,'pointer',x,y,2);time.sleep(duration);command(role,'pointer',x,y,0);time.sleep(.15)
 
 
@@ -92,11 +93,30 @@ def snapshot(role):
     raise RuntimeError(f'{role} did not finish its native screenshot')
 
 
-def long_jump(role):
+def message_mark():
+    path=OUT/'host/messages.jsonl'
+    return path.stat().st_size if path.exists() else 0
+
+
+def messages_since(mark):
+    path=OUT/'host/messages.jsonl'
+    if not path.exists():return ''
+    with path.open('rb') as source:source.seek(mark);data=source.read()
+    texts=[]
+    for line in data.splitlines():
+        try:texts.append(json.loads(line)['text'])
+        except (ValueError,KeyError,UnicodeDecodeError):pass
+    return ''.join(texts)
+
+
+class InteractionOutOfReach(RuntimeError):pass
+
+
+def long_jump(role,target=None):
     """Use the modern keys' native standing long jump; observe actual landing."""
     release_movement(role);which=role=='client';before=state()['characters'][which]
     if not before.get('grounded',True):raise RuntimeError('Take off from solid footing')
-    trace=[];airborne=False;began=time.monotonic()
+    trace=[];airborne=False;braked=False;began=time.monotonic()
     try:
         command(role,'key',KEYS['ctrl'],1);command(role,'key',KEYS['shift'],1);time.sleep(.2)
         command(role,'key',KEYS['shift'],0);command(role,'key',KEYS['ctrl'],0)
@@ -104,11 +124,40 @@ def long_jump(role):
         while time.monotonic()-began<4:
             time.sleep(.05);current=state()['characters'][which];trace.append(current)
             airborne=airborne or not current.get('grounded',True)
+            if target and airborne and not braked and max(abs(current['x']/256-target[0]),abs(current['y']/256-target[1]))<.35:
+                command(role,'key',KEYS['w'],0);braked=True
             if airborne and current.get('grounded',True):return current
         raise RuntimeError('The native long jump did not take off and land')
     finally:
         release_movement(role)
-        (OUT/f'last-jump-{role}.json').write_text(json.dumps({'before':before,'trace':trace},indent=2))
+        (OUT/f'last-jump-{role}.json').write_text(json.dumps({'before':before,'target':target,'braked':braked,'trace':trace},indent=2))
+
+
+def fly(role,x,y,z=None,timeout=30):
+    """Fly with an existing native spell or potion using modern Shift/Ctrl keys."""
+    which=role=='client';began=time.monotonic();release_movement(role)
+    try:
+        command(role,'pointer',230,150,0)
+        if not state()['characters'][which].get('motion_effects',0)&16:
+            raise RuntimeError('Use a genuine flight effect first')
+        if z is not None:
+            for _ in range(30):
+                current=state()['characters'][which];delta=z-current['z']/64
+                if abs(delta)<.15:break
+                if not current['motion_effects']&16:raise RuntimeError('Original flight effect expired')
+                key(role,'shift' if delta>0 else 'ctrl',min(.15,max(.05,abs(delta)/10)));time.sleep(.1)
+            else:raise RuntimeError('Original terrain prevents the requested flight height')
+        while time.monotonic()-began<timeout:
+            current=state()['characters'][which];dx=x-current['x']/256;dy=y-current['y']/256
+            if not current['motion_effects']&16:raise RuntimeError('Original flight effect expired')
+            if z is not None and current['z']/64<z-1:raise RuntimeError('Fell below the intended flight height')
+            if max(abs(dx),abs(dy))<.18:
+                print(f'{role} flew to {x},{y} at height {current["z"]/64:.2f}',flush=True);return
+            face(role,math.degrees(math.atan2(dx,dy)))
+            distance=math.hypot(dx,dy)
+            key(role,'w' if distance>.6 else 'x',min(.3,max(.05,distance/4)));time.sleep(.1)
+        raise RuntimeError('Flight did not reach the original destination')
+    finally:release_movement(role)
 
 
 def quantity(role,count):
@@ -232,11 +281,13 @@ def slot_point(slot):
     if slot==19:return 248,70
     if 20<=slot<=27:slot-=9
     if 11<=slot<=18:return 248+19*((slot-11)%4),89+18*((slot-11)//4)
-    return {5:(252,20),6:(301,20),7:(250,46),8:(304,46)}[slot]
+    return {0:(277,17),1:(277,34),2:(277,49),3:(277,63),4:(277,76),
+            5:(252,20),6:(301,20),7:(250,46),8:(304,46),9:(253,58),10:(300,60)}[slot]
 
 
 def inventory_drag(role,index,destination):
     mode(role,4);inv=state()['characters'][role=='client']['inventory'];slot=inv.index(index)
+    command(role,'pointer',*slot_point(slot),0);time.sleep(.05)
     command(role,'pointer',*slot_point(slot),2);time.sleep(.6)
     command(role,'pointer',*destination,2);time.sleep(.35)
     command(role,'pointer',*destination,0);time.sleep(.25)
@@ -262,7 +313,9 @@ def unlock(role,index):
         mode(role,1);click(role,*slot_point(slot))
         if state()['characters'][which]['input_mode']!=2:
             raise RuntimeError('The native key did not enter target mode')
-        interact(role,door['index']);time.sleep(.2)
+        mark=message_mark();interact(role,door['index']);time.sleep(.2)
+        if any(text in messages_since(mark).lower() for text in ('cannot reach','unable to use that from here')):
+            raise InteractionOutOfReach('Move closer before trying the carried keys')
         if state()['characters'][which]['input_mode']==2:
             raise RuntimeError('The native key target is still pending')
         door=closed_door(state(),tile)
@@ -283,7 +336,7 @@ def barter_offer(role,index,count=None,slot=0):
     command(role,'pointer',x-10,y,2);time.sleep(.4)  # native drag threshold is six pixels
     # Native screen coordinates invert the DOS bottom-origin slot table.
     trade_x,trade_y=154+21*(slot%2),20+18*(slot//2)
-    if obj['quantity'] and obj['link']>1:
+    if obj['quantity'] and 1<obj['link']<512:
         if not state()['story']:raise RuntimeError('The native quantity prompt did not open')
         quantity(role,count if count is not None else obj['link'])
     else:
@@ -318,39 +371,91 @@ def dialogue(role,choices=()):
 
 
 def face_object(role,index):
-    s=state();x,y=positions(s)[index];c=s['characters'][role=='client']
-    face(role,math.degrees(math.atan2(x+.5-c['x']/256,y+.5-c['y']/256)))
+    s=state();x,y=object_point(s,index);c=s['characters'][role=='client']
+    face(role,math.degrees(math.atan2(x-c['x']/256,y-c['y']/256)))
+
+
+def object_point(s,index):
+    x,y=positions(s)[index];obj=next(o for o in s['objects'] if o['index']==index)
+    pos=obj.get('position')
+    return (x+((pos>>13)&7)/8,y+((pos>>10)&7)/8) if pos is not None and not 320<=obj['item']<336 else (x+.5,y+.5)
+
+
+def strike(role,style=';',charge=100):
+    """Charge and complete one actual native swing, including its recovery."""
+    which=role=='client';code=KEYS[style];before=state()['characters'][which]
+    command(role,'key',code,1)
+    try:
+        began=time.monotonic()
+        while time.monotonic()-began<3:
+            current=state()['characters'][which];attack=current['attack']
+            if current['motion_state']&1 or current['xp']<before['xp'] or not current['drawn']:return False
+            if attack[0]<0 and attack[1]==3 and attack[2]>=charge:break
+            time.sleep(.05)
+        else:raise RuntimeError('Native attack did not reach its requested charge')
+    finally:command(role,'key',code,0)
+    began=time.monotonic()
+    while time.monotonic()-began<3:
+        if state()['characters'][which]['attack'][0]==0:return True
+        time.sleep(.05)
+    raise RuntimeError('Native attack did not complete recovery')
 
 
 def talk(role,name,choices=()):
     for _ in range(8):
-        s=state();npc=next(o for o in s['objects'] if o['npc_name'].lower()==name.lower());index=npc['index']
+        s=state();npc=next(o for o in s['objects'] if o['index']==name) if isinstance(name,int) else next(o for o in s['objects'] if o['npc_name'].lower()==name.lower());index=npc['index']
         mode(role,5);face_object(role,index);time.sleep(.15)
         found=next((t for t in targets(role) if t['index']==index),None)
         if found:
             click(role,found['x'],found['y']);time.sleep(.2)
             if state()['screen']==2:return dialogue(role,choices)
-        else:
-            s=state();px,py=positions(s)[index];c=s['characters'][role=='client'];start=(c['x']//256,c['y']//256)
-            other=s['characters'][role!='client'];blocked=(other['x']//256,other['y']//256);possible=[]
-            for x,y in ((px-1,py),(px+1,py),(px,py-1),(px,py+1)):
-                try:possible.append((len(path(s,start,(x,y),blocked,True,4)),x,y))
-                except RuntimeError:pass
-            if not possible:raise RuntimeError(f'No reachable position next to {name}')
-            _,x,y=min(possible);go(role,x,y)
+        # A visible NPC can still be beyond the original speaking reach.
+        # Approach after a rejected click rather than repeatedly clicking it.
+        s=state();px,py=positions(s)[index];c=s['characters'][role=='client'];start=(c['x']//256,c['y']//256)
+        other=s['characters'][role!='client'];blocked=(other['x']//256,other['y']//256);possible=[]
+        for x,y in ((px-1,py),(px+1,py),(px,py-1),(px,py+1)):
+            try:possible.append((len(path(s,start,(x,y),blocked,True,1,start_height=c['z']/64)),x,y))
+            except RuntimeError:pass
+        if not possible:raise RuntimeError(f'No reachable position next to {name}')
+        _,x,y=min(possible);go(role,x,y)
     raise RuntimeError(f'{name} did not start a conversation')
 
 
-def fight(role,index,timeout=60):
-    release_movement(role);mode(role,2);time.sleep(.6);began=time.monotonic()
+def melee_style(s,which,enemy):
+    c=s['characters'][which];avatar=next(o for o in s['objects'] if o['index']==c['index'])
+    for style,third in ((';',2),('.',1),('p',3)):
+        plane=int(c['z']/8)+avatar['height']*third//3
+        if enemy['z']<=plane<enemy['z']+enemy['height']:return style
+    return None
+
+
+def clear_melee_line(s,which,enemy):
+    c=s['characters'][which];px,py=c['x']/256,c['y']/256;ex,ey=object_point(s,enemy['index'])
+    pos=positions(s);doors={pos[o['index']] for o in s['objects'] if 320<=o['item']<328 and o['index'] in pos}
+    steps=max(1,math.ceil(math.hypot(ex-px,ey-py)*16))
+    for step in range(1,steps):
+        x=px+(ex-px)*step/steps;y=py+(ey-py)*step/steps;cell=(int(x),int(y));tile=s['tiles'][cell[0]+cell[1]*64]
+        fx,fy=int(x*8)&7,int(y*8)&7
+        if tile[0]==0 or cell in doors:return False
+        if ((tile[0]==2 and fy>=fx) or (tile[0]==3 and fx+fy>=7)
+            or (tile[0]==4 and fx+fy<=7) or (tile[0]==5 and fy<=fx)):return False
+    return True
+
+
+def fight(role,index,timeout=180):
+    if state()['characters'][role=='client']['motion_state']&1:return False
+    release_movement(role);mode(role,2);key(role,'2');time.sleep(.6);began=time.monotonic()
     while time.monotonic()-began<timeout:
         s=state();enemy=next((o for o in s['objects'] if o['index']==index and 0x40<=o['item']<0x7f),None)
         if not enemy or enemy['hp']==0:return True
-        c=s['characters'][role=='client'];distance=math.hypot(enemy['x']+.5-c['x']/256,enemy['y']+.5-c['y']/256)
+        style=melee_style(s,role=='client',enemy)
+        if style is None or not clear_melee_line(s,role=='client',enemy):return False
+        c=s['characters'][role=='client'];ex,ey=object_point(s,index);distance=math.hypot(ex-c['x']/256,ey-c['y']/256)
         if distance>3:return False  # A native rescue can move the player to the companion.
         face_object(role,index)
-        if distance>.70:key(role,'x',.2)
-        key(role,'.' if enemy.get('height',23)<12 else ';',.8);time.sleep(.4)
+        if distance>.70:
+            key(role,'w',min(.3,max(.08,(distance-.6)/3)));time.sleep(.12);continue
+        if not strike(role,style):return False
         if state()['screen']!=0:return False
     raise RuntimeError(f'Combat with {index} did not finish')
 
@@ -362,6 +467,20 @@ def positions(s):
         while index and index not in seen and index in objects:
             seen.add(index);result[index]=(tile%64,tile//64);index=objects[index]['next']
     return result
+
+
+def level_exits(s):
+    """Original movement triggers leading to another shared game level."""
+    objects={o['index']:o for o in s['objects']};pos=positions(s);exits={}
+    for o in s['objects']:
+        if o['item'] not in (416,420) or o['index'] not in pos:continue
+        link=o['link'];seen=set()
+        while link in objects and link not in seen:
+            seen.add(link);trap=objects[link]
+            if trap['item']==385 and trap['z'] not in (0,s['level']):
+                exits[pos[o['index']]]=trap['z'];break
+            link=trap['link']
+    return exits
 
 
 def summary():
@@ -387,14 +506,19 @@ def surface_height(surface,direction=None):
     return surface[1]+(1 if direction==rise else 0 if direction==(-rise[0],-rise[1]) else .5)
 
 
-def path(s,start,target,blocked=None,diagonals=False,max_rise=1,*,start_height=None,layered=False,jumping=False):
+def path(s,start,target,blocked=None,diagonals=False,max_rise=1,*,start_height=None,layered=False,jumping=False,avoid=(),max_drop=1.25,water_cost=30):
     tiles=s['tiles'];surfaces=world_surfaces(s)
+    if not tiles[target[0]+target[1]*64][0]:raise RuntimeError(f'Target {target} is a wall, not a walking destination')
     choices=surfaces[start[0]+start[1]*64]
     if start_height is None:start_height=surface_height(choices[0])
     initial=(*start,min(range(len(choices)),key=lambda i:abs(surface_height(choices[i])-start_height)))
     queue=[(0,initial)];previous={initial:None};costs={initial:0}
     pos=positions(s)
-    obstacles={pos[o['index']] for o in s['objects'] if o['index']>=256 and o['index'] in pos and o.get('height',0)>16 and o.get('radius',0)>=4 and not 0x140<=o['item']<0x150}
+    obstacles={pos[o['index']] for o in s['objects'] if o['index']>=256 and o['index'] in pos and o.get('height',0)>8 and o.get('radius',0)>=2 and not (0x140<=o['item']<0x150 or 0x180<=o['item']<0x1c0)}
+    obstacles.update(pos[o['index']] for o in s['objects'] if o['name']=='a_pillar'
+                     and o['index'] in pos and pos[o['index']] not in (start,target))
+    obstacles.update(tile for tile in level_exits(s) if tile not in (start,target))
+    obstacles.update(avoid)
     edges={2:{(1,0),(0,-1)},3:{(-1,0),(0,-1)},4:{(1,0),(0,1)},5:{(-1,0),(0,1)}}
     while queue:
         cost,at=heapq.heappop(queue)
@@ -434,17 +558,18 @@ def path(s,start,target,blocked=None,diagonals=False,max_rise=1,*,start_height=N
                 source_height=start_height if at==initial else surface_height(asurface,direction)
                 rise=surface_height(bs,(-direction[0],-direction[1]))-source_height
                 if bs[2]==2 or rise>max_rise:continue
+                if max_drop is not None and rise < -max_drop:continue
                 if nextlayer==0 and len(surfaces[nx+ny*64])>1 and surface_height(bs)+23/8>surfaces[nx+ny*64][1][1]-.25:continue
                 node=(nx,ny,nextlayer)
-                candidate=cost+1+(30 if bs[2]==1 else 0)+(4 if rise>1 else 0)+(2 if 2<=b[0]<=5 else 0)
+                candidate=cost+1+(water_cost if bs[2]==1 else 0)+(4 if rise>1 else 0)+(2 if 2<=b[0]<=5 else 0)
                 if candidate<costs.get(node,float('inf')):
                     costs[node]=candidate;previous[node]=at;heapq.heappush(queue,(candidate,node))
     raise RuntimeError(f'No walking route from {start} to {target}')
 
 
-def go(role,x,y,engage=False,jumping=False):
+def go(role,x,y,engage=False,jumping=False,max_rise=1,*,water_cost=30):
     release_movement(role)
-    which=role=='client';held=None;began=time.monotonic();last=None;stalled=0;waypoint=None;jumped_for=None
+    which=role=='client';held=None;began=time.monotonic();last=None;stalled=0;waypoint=None;jumped_for=None;avoid=set();ignored_enemies=set();combat_cell=None
     original_level=state()['level']
     try:
         while time.monotonic()-began<600:
@@ -454,10 +579,26 @@ def go(role,x,y,engage=False,jumping=False):
                 return
             if s['screen']!=0 or s['story']:raise RuntimeError('Navigation interrupted by a modal screen')
             px,py=c['x']/256,c['y']/256;start=(int(px),int(py))
-            threats=[o for o in s['objects'] if 0x40<=o['item']<0x7f and o['hp'] and o['goal'] in (5,6,9) and math.hypot(o['x']+.5-px,o['y']+.5-py)<1.8]
-            if engage and threats and s['tiles'][start[0]+start[1]*64][2]!=1:
+            if start!=combat_cell:ignored_enemies.clear();combat_cell=start
+            party_indices={member['index'] for member in s['characters']}
+            threats=[o for o in s['objects'] if 0x40<=o['item']<0x7f and o['hp']
+                     and o['index'] not in ignored_enemies
+                     and ((o['goal'] in (4,5,6,9) and o.get('attitude')==0)
+                          or (o['goal'] in (5,9) and o.get('target') in party_indices))
+                     and abs(o['z']/8-c['z']/64)<3
+                     and melee_style(s,which,o) is not None
+                     and clear_melee_line(s,which,o)
+                     and math.hypot(o['x']+.5-px,o['y']+.5-py)<2.5]
+            if engage and threats and not c['motion_state']&1 and s['tiles'][start[0]+start[1]*64][2]!=1:
                 if held:command(role,'key',KEYS[held],0);held=None
-                fight(role,min(threats,key=lambda o:math.hypot(o['x']+.5-px,o['y']+.5-py))['index'])
+                target_enemy=min(threats,key=lambda o:math.hypot(o['x']+.5-px,o['y']+.5-py))['index']
+                defeated=fight(role,target_enemy)
+                if not defeated:ignored_enemies.add(target_enemy)
+                after=state()
+                if not defeated and after['screen']!=0:
+                    raise RuntimeError('Combat interrupted by a native modal screen')
+                if after['characters'][which]['xp']<c['xp']:
+                    print(f'{role}: native companion revival; replanning from the restored position',flush=True)
                 waypoint=None;continue
             other=s['characters'][1-which]
             def point(cell):
@@ -466,18 +607,39 @@ def go(role,x,y,engage=False,jumping=False):
                 objects={o['index']:o for o in s['objects']};idx=s['tiles'][cell[0]+cell[1]*64][4];seen=set()
                 while idx and idx in objects and idx not in seen:
                     seen.add(idx);o=objects[idx]
-                    if o['name']=='a_pillar':ox,oy=.3,.5
+                    if o['name']=='a_pillar':ox,oy=.875,.875
                     idx=o['next']
                 return cell[0]+ox,cell[1]+oy
+            def tolerance(cell):return .08 if point(cell)==(cell[0]+.875,cell[1]+.875) else .18
             surfaces=world_surfaces(s)
             def height(cell):return surface_height(surfaces[cell[0]+cell[1]*64][cell[2]])
+            # Native co-op revival can move a character beside the companion.
+            # Discard the old local waypoint before giving further movement.
+            if waypoint and max(abs(waypoint[0]+.5-px),abs(waypoint[1]+.5-py))>3:
+                waypoint=None
             wx,wy=point(waypoint) if waypoint else (0,0)
-            if waypoint is None or (max(abs(wx-px),abs(wy-py))<.18 and abs(height(waypoint)-c['z']/64)<.5):
-                route=path(s,start,(x,y),(other['x']//256,other['y']//256),True,1,start_height=c['z']/64,layered=True,jumping=jumping)
+            start_point=point(start)
+            if waypoint is None or (max(abs(wx-px),abs(wy-py))<tolerance(waypoint) and abs(height(waypoint)-c['z']/64)<.5):
+                route=path(s,start,(x,y),(other['x']//256,other['y']//256),True,max_rise,start_height=c['z']/64,layered=True,jumping=jumping,avoid=avoid,water_cost=water_cost)
                 currentlayer=min(range(len(surfaces[x+y*64])),key=lambda i:abs(surface_height(surfaces[x+y*64][i])-c['z']/64))
                 waypoint=route[0] if route else (x,y,currentlayer)
             target=waypoint
             tx,ty=point(target);dx,dy=tx-px,ty-py
+            # Leave a pillar tile along its clear outer edge. Steering directly
+            # toward the next tile centre cuts through the pillar's footprint.
+            if start_point==(start[0]+.875,start[1]+.875) and target[:2]!=start:
+                if held:command(role,'key',KEYS[held],0);held=None
+                if target[0]!=start[0]:
+                    edge=start[1]+(.875 if py-start[1]>=.5 else -.125)
+                    aligning=abs(edge-py)>.04
+                    direction=(0 if edge>py else 180) if aligning else (90 if target[0]>start[0] else 270)
+                    duration=min(.08,max(.02,abs(edge-py)/2.5)) if aligning else .15
+                else:
+                    edge=start[0]+(.875 if px-start[0]>=.5 else -.125)
+                    aligning=abs(edge-px)>.04
+                    direction=(90 if edge>px else 270) if aligning else (0 if target[1]>start[1] else 180)
+                    duration=min(.08,max(.02,abs(edge-px)/2.5)) if aligning else .15
+                face(role,direction);key(role,'x',duration);continue
             if jumping and max(abs(target[0]-start[0]),abs(target[1]-start[1]))==2 and jumped_for!=target:
                 if closed_door(s,target[:2]):
                     raise RuntimeError(f'Open the landing door at {target[:2]} before jumping')
@@ -487,24 +649,17 @@ def go(role,x,y,engage=False,jumping=False):
                     raise RuntimeError('The raised stone door needs an earlier native takeoff to clear its underside')
                 release_movement(role);held=None
                 face(role,math.degrees(math.atan2(dx,dy)))
-                # Modern keys' Ctrl+Shift is the native standing long jump.
-                # A short forward walk followed by lowercase j only jumps
-                # with the walk speed, which cannot clear a whole water tile.
-                command(role,'key',KEYS['ctrl'],1);command(role,'key',KEYS['shift'],1);time.sleep(.2)
-                command(role,'key',KEYS['shift'],0);command(role,'key',KEYS['ctrl'],0)
-                command(role,'key',KEYS['w'],1);held='w';jumped_for=target
-                for _ in range(20):
-                    airborne=state()['characters'][which]
-                    if not airborne.get('grounded',True):break
-                    time.sleep(.05)
-                else:raise RuntimeError('The native long jump did not leave the ground')
+                # Observe takeoff before braking near the destination. A lower
+                # landing platform gives a longer flight than an ascending one.
+                landing=long_jump(role,(tx,ty));held=None;jumped_for=target
+                if landing['z']/64<height(target)-1:
+                    raise RuntimeError(f'Native jump landed below {target}; recover before retrying')
                 continue
             if jumped_for==target and not c.get('grounded',True):
                 # Input acknowledgement precedes simulation. Keep the original
                 # takeoff movement until landing, rather than slowing in midair
                 # using a stale pre-jump snapshot or a nearby waypoint.
                 time.sleep(.1);continue
-            if target[:2]==(x,y) and max(abs(dx),abs(dy))<.18 and abs(height(target)-c['z']/64)<.5:break
             if 2<=s['tiles'][target[0]+target[1]*64][0]<=5 and start!=target[:2]:
                 if start[1]==target[1] and abs(dy)>.10:
                     if held:command(role,'key',KEYS[held],0);held=None
@@ -512,14 +667,22 @@ def go(role,x,y,engage=False,jumping=False):
                 if start[0]==target[0] and abs(dx)>.10:
                     if held:command(role,'key',KEYS[held],0);held=None
                     face(role,90 if dx>0 else 270);key(role,'x',min(.25,abs(dx)/1.5));continue
-            door=closed_door(s,target[:2])
-            if door and c.get('grounded',True) and max(abs(dx),abs(dy))<1.6:
+            door=closed_door(s,target[:2]) or (closed_door(s,start) if stalled>2 else None)
+            if door and c.get('grounded',True) and max(abs(dx),abs(dy))<1.1:
+                door_tile=positions(s)[door['index']]
                 if held:command(role,'key',KEYS[held],0);held=None
-                face_object(role,door['index']);interact(role,door['index']);time.sleep(.5)
-                changed=closed_door(state(),target[:2])
-                if changed and not unlock(role,changed['index']):
-                    raise RuntimeError(f'Locked door {door["index"]} at {target}')
+                face_object(role,door['index']);mark=message_mark();interact(role,door['index']);time.sleep(.5)
+                if any(text in messages_since(mark).lower() for text in ('cannot reach','unable to use that from here')):
+                    key(role,'x',.15);continue
+                changed=closed_door(state(),door_tile)
+                try:locked=changed and not unlock(role,changed['index'])
+                except InteractionOutOfReach:
+                    key(role,'x',.15);continue
+                if locked:
+                    print(f'{role}: locked door at {door_tile}; looking for another route',flush=True)
+                    avoid.add(door_tile);waypoint=None
                 continue
+            if target[:2]==(x,y) and max(abs(dx),abs(dy))<tolerance(target) and abs(height(target)-c['z']/64)<.5:break
             drop=height(target)-c['z']/64<-1
             if drop and jumped_for!=target:
                 if held:command(role,'key',KEYS[held],0);held=None
@@ -601,6 +764,7 @@ def main():
     p=sub.add_parser('pointer');p.add_argument('role',choices=['host','client']);p.add_argument('x',type=int);p.add_argument('y',type=int);p.add_argument('buttons',type=int,nargs='?',default=0)
     p=sub.add_parser('shot');p.add_argument('role',choices=['host','client'])
     p=sub.add_parser('jump');p.add_argument('role',choices=['host','client'])
+    p=sub.add_parser('fly');p.add_argument('role',choices=['host','client']);p.add_argument('x',type=float);p.add_argument('y',type=float);p.add_argument('--height',type=float)
     sub.add_parser('save')
     p=sub.add_parser('restore');p.add_argument('--slot',type=int,choices=range(1,5),default=1)
     p=sub.add_parser('go');p.add_argument('role',choices=['host','client']);p.add_argument('x',type=int);p.add_argument('y',type=int)
@@ -613,6 +777,7 @@ def main():
     elif args.action=='pointer':command(args.role,'pointer',args.x,args.y,args.buttons)
     elif args.action=='shot':snapshot(args.role)
     elif args.action=='jump':long_jump(args.role)
+    elif args.action=='fly':fly(args.role,args.x,args.y,args.height)
     elif args.action=='save':command('host','save')
     elif args.action=='restore':restore(args.slot)
     elif args.action=='go':go(args.role,args.x,args.y,args.engage,args.jumping)

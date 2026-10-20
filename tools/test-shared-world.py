@@ -148,7 +148,10 @@ def main():
     if args.characters:
         checks=('fresh process resumed both saved characters',) if args.resume else ('individual inventories, stats, mana, spells, quests, rewards passed',
                       'save/load restored both characters and world',
-                      'guest travel preserved both inventories','companion revival passed',
+                      'safe overlapping save restores exact guest position passed',
+                      'guest travel preserved both inventories','companion revival preserves living plot NPCs',
+                      'native gazer death after revival completes shared quest',
+                      'original royal stair arrival avoids return trigger passed',
                       'Tybal mana rules passed','shared orb restored private mana passed','all nine levels and return passed')
         for check in checks:
             assert 'SHARED CHARACTERS '+check in host, 'Character check failed: '+check

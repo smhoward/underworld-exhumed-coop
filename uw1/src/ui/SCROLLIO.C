@@ -204,6 +204,9 @@ int far scroll_print(char far *s)
 
     if (scrmode != MODE_GAME && scrmode != MODE_CONV)
         return -1;
+#ifndef __TURBOC__
+    port_shared_text(s);
+#endif
 
     set_mouse_in();
     if (mouse_in_scroll)
