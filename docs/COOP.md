@@ -304,14 +304,24 @@ initialization requests. The regression reproduces the old growth and checks rep
 entry, viewing and exit with both characters.
 
 The complete main story, all talisman acquisition routes, and optional side quests
-are still in progress. The persistent campaign has reached level 4 with no talismans
-acquired. The guest completed Ishtass's Ossikka delivery with the original scroll and
+are still in progress. The persistent campaign has reached level 4 and returned to
+level 3, where the guest acquired the original Taper of Sacrifice through Zak's native
+barter. This is the first talisman acquired in the run. The guest completed Ishtass's
+Ossikka delivery with the original scroll and
 received the private Wis stone, wand and potion reward. The bandit key and southern
 combat route are cleared; the remaining level 3 routes require a return. The remaining
 talismans and ending have not been completed in this run. On level 4, the host's Crux
 initiation was recognized by the guest's troll dialogue; the guest recovered and
-delivered the Writ of Lorne, received a private plate helm, and completed Derek's Gem
-Cutter delivery. Both characters advanced their own skills at original shrines.
+delivered the Writ of Lorne, received and equipped a private plate helm, and completed
+Derek's Gem Cutter delivery. The host made rotworm stew from the original ingredients
+and recipe, then exchanged it with Sethar for dragon scales. Both characters advanced
+their own skills at original shrines.
+
+The input driver also checks that inventory drags actually change the acting player's
+inventory, so a hidden inventory panel cannot silently pass as an equipment change.
+Barter offers verify the expected item-count decrease before returning; this avoids
+an extra look click that could leave a text prompt ahead of the next offer. The live
+campaign verified the rune-panel rejection and the original talisman barter retry.
 
 Both Windows binaries build. These scenarios supply prerequisites and call native
 handlers or drive native input; they are **not a completed start-to-finish playthrough**.

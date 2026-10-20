@@ -292,7 +292,8 @@ def slot_point(slot):
 
 
 def inventory_drag(role,index,destination):
-    mode(role,4);inv=state()['characters'][role=='client']['inventory'];slot=inv.index(index)
+    mode(role,4);before=state();inv=before['characters'][role=='client']['inventory'];slot=inv.index(index)
+    signature=inventory_signature(before)[role=='client']
     command(role,'pointer',*slot_point(slot),0);time.sleep(.05)
     command(role,'pointer',*slot_point(slot),2);time.sleep(.6)
     command(role,'pointer',*destination,2);time.sleep(.35)
@@ -300,7 +301,11 @@ def inventory_drag(role,index,destination):
     if destination[0]>=238:
         for _ in range(30):
             current=state()
-            if current['story'] or not current['characters'][role=='client']['cursor']:break
+            if current['story']:break
+            if not current['characters'][role=='client']['cursor']:
+                if inventory_signature(current)[role=='client']==signature:
+                    raise RuntimeError('Native inventory did not change; verify the inventory panel is visible before dragging')
+                break
             time.sleep(.1)
         else:raise RuntimeError('Native inventory destination rejected the item; place the held cursor item before continuing')
 
@@ -342,8 +347,12 @@ def unlock(role,index):
 def barter_offer(role,index,count=None,slot=0):
     s=state()
     if s['screen']!=2:raise RuntimeError('A native conversation must be open before offering an item')
+    if s['story']:raise RuntimeError('Finish the native text prompt before offering an item')
     inv=s['characters'][role=='client']['inventory'];x,y=slot_point(inv.index(index))
     obj=next(o for o in s['objects'] if o['index']==index)
+    units=(count if count is not None else obj['link']) if obj['quantity'] and 1<obj['link']<512 else 1
+    expected=carried_count(s,role=='client',obj['item'])-units
+    command(role,'pointer',x,y,0);time.sleep(.1)
     command(role,'pointer',x,y,2);time.sleep(.2)
     command(role,'pointer',x-10,y,2);time.sleep(.4)  # native drag threshold is six pixels
     # Native screen coordinates invert the DOS bottom-origin slot table.
@@ -355,10 +364,13 @@ def barter_offer(role,index,count=None,slot=0):
         command(role,'pointer',trade_x,trade_y,2);time.sleep(.2)
         command(role,'pointer',trade_x,trade_y,0);time.sleep(.2)
     for _ in range(3):
+        current=state()
+        if not current['characters'][role=='client']['cursor'] and carried_count(current,role=='client',obj['item'])==expected:return
         command(role,'pointer',trade_x,trade_y,0);time.sleep(.2)
         click(role,trade_x,trade_y,.2)
         for _ in range(10):
-            if not state()['characters'][role=='client']['cursor']:return
+            current=state()
+            if not current['characters'][role=='client']['cursor'] and carried_count(current,role=='client',obj['item'])==expected:return
             time.sleep(.1)
     raise RuntimeError('The native trade slot did not accept the held offer')
 
