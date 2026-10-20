@@ -152,6 +152,7 @@ python tools/test-shared-world.py --data /path/to/UW1 --campaign ending
 python tools/test-shared-world.py --data /path/to/UW1 --campaign terrain
 python tools/test-shared-world.py --data /path/to/UW1 --campaign messages
 python tools/test-shared-world.py --data /path/to/UW1 --campaign hud
+python tools/test-shared-world.py --data /path/to/UW1 --campaign maps
 ```
 
 UW1 has been exercised in actual processes for visible avatars, independent movement,
@@ -198,6 +199,8 @@ The campaign scenarios use separate homes under `build/campaign-tests/uw1/`:
   and private poison coloring. Pixel checks detect a companion's stale flask fill
   in the other view. Native flask art is rebuilt between frames, after erasing old
   sprite layers, and its pixels are retained for the corresponding camera.
+- `maps`: repeated map entry and exit by alternating characters, checking that
+  the native mouse-handler count remains stable while viewing and after closing.
 
 `tools/uw1-playthrough.py` also runs a persistent campaign in isolated homes under
 `build/uw1-playthrough/`. It uses the packaged UW1 executable, original game data,
@@ -278,6 +281,13 @@ while excluding player movement-trigger tiles and preferring space separate from
 other avatar. Ordinary teleport placement is unchanged. The native regression uses
 that exact arrival, and the saved campaign replay verifies visible, separate avatars
 in both cameras and guest movement that remains on level 3.
+
+Leaving the automap open during the level 3 campaign exposed an input-table leak.
+Seat switching requested every editor change, including the map initializer, which
+registered another mouse handler each frame. Character switches now request the
+character HUD only on the adventure screen; native screen changes retain their own
+initialization requests. The regression reproduces the old growth and checks repeated
+entry, viewing and exit with both characters.
 
 The complete main story, all talisman acquisition routes, and optional side quests
 are still in progress. The persistent campaign is on level 3 with no talismans acquired;

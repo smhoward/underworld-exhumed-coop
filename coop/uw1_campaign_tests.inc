@@ -188,7 +188,23 @@ static void campaign_test(void)
     if(!mode || !partner)return;
     if(!began)began=now;
     if(now-began<500)return;
-    if(!strcmp(mode,"hud")) {
+    if(!strcmp(mode,"maps")) {
+        extern int16 mdispcnt;
+        if(stage<8 && !(stage&1)) {
+            int owner=(stage/2)&1;
+            ids[0]=mdispcnt;seat(owner);newscr(2);do_changes();ids[1]=mdispcnt;seat(0);
+            stage++;began=now;return;
+        }
+        if(stage<8 && (stage&1) && now-began>=600) {
+            int owner=((stage-1)/2)&1;
+            campaign_require(scrnum==1 && mdispcnt==ids[1],"shared map input handlers grow while viewing");
+            seat(owner);newscr(1);seat(0);
+            campaign_require(scrnum==0 && mdispcnt==ids[0],"shared map exit leaked input handlers");
+            fprintf(stderr,"SHARED CAMPAIGN shared map round %d owner=%d retains input handlers passed\n",stage/2+1,owner);
+            stage++;return;
+        }
+        if(stage==8){fprintf(stderr,"SHARED CAMPAIGN maps complete\n");stage=100;}
+    } else if(!strcmp(mode,"hud")) {
         if(stage==0) {
             playerdat->avghit=40;ThePlayer->hp=40;player->max_mana=player->play_mana=16;player->poison=0;
             seat(1);playerdat->avghit=40;ThePlayer->hp=10;player->max_mana=16;player->play_mana=0;player->poison=0;seat(0);

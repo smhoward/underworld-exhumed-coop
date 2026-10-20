@@ -219,7 +219,9 @@ static void seat(int next)
     port_shared_keyboard_seat(next);port_shared_mouse_seat(next);port_shared_input_seat(next);
     { int x,y;pthread_mutex_lock(&shared_lock);x=inputs[next].x;y=inputs[next].y;pthread_mutex_unlock(&shared_lock);
       mouse_putxy(x,199-y); }
-    editchng(0x7FFE);
+    /* The adventure HUD belongs to the character. Automap bit 1 initializes
+       its input handler; repeating that on every seat switch leaks handlers. */
+    if(scrnum==0)editchng(0x7FFE);
 #if COOP_GAME == 1
     character_art();
 #endif
