@@ -218,7 +218,8 @@ def interact(role,index,action='use',destination=None):
         if action=='get':
             expected=before+(obj['link'] if obj['quantity'] and not obj['link']&512 else 1)
             for _ in range(40):
-                if carried_count(state(),which,obj['item'])==expected:break
+                received=state()
+                if not received['characters'][which]['cursor'] and carried_count(received,which,obj['item'])==expected:break
                 time.sleep(.1)
             else:raise RuntimeError('Native pickup did not add the item; inspect its range and destination')
     else:click(role,found['x'],found['y'])
@@ -291,6 +292,12 @@ def inventory_drag(role,index,destination):
     command(role,'pointer',*slot_point(slot),2);time.sleep(.6)
     command(role,'pointer',*destination,2);time.sleep(.35)
     command(role,'pointer',*destination,0);time.sleep(.25)
+    if destination[0]>=238:
+        for _ in range(30):
+            current=state()
+            if current['story'] or not current['characters'][role=='client']['cursor']:break
+            time.sleep(.1)
+        else:raise RuntimeError('Native inventory destination rejected the item; place the held cursor item before continuing')
 
 
 def closed_door(s,tile):
@@ -567,7 +574,9 @@ def path(s,start,target,blocked=None,diagonals=False,max_rise=1,*,start_height=N
     raise RuntimeError(f'No walking route from {start} to {target}')
 
 
-def go(role,x,y,engage=False,jumping=False,max_rise=1,*,water_cost=30):
+def go(role,x,y,engage=False,jumping=False,max_rise=1,*,water_cost=30,max_drop=1.25):
+    if state()['characters'][role=='client']['cursor']:
+        raise RuntimeError('Place the held cursor item before starting a walking route')
     release_movement(role)
     which=role=='client';held=None;began=time.monotonic();last=None;stalled=0;waypoint=None;jumped_for=None;avoid=set();ignored_enemies=set();combat_cell=None
     original_level=state()['level']
@@ -620,7 +629,7 @@ def go(role,x,y,engage=False,jumping=False,max_rise=1,*,water_cost=30):
             wx,wy=point(waypoint) if waypoint else (0,0)
             start_point=point(start)
             if waypoint is None or (max(abs(wx-px),abs(wy-py))<tolerance(waypoint) and abs(height(waypoint)-c['z']/64)<.5):
-                route=path(s,start,(x,y),(other['x']//256,other['y']//256),True,max_rise,start_height=c['z']/64,layered=True,jumping=jumping,avoid=avoid,water_cost=water_cost)
+                route=path(s,start,(x,y),(other['x']//256,other['y']//256),True,max_rise,start_height=c['z']/64,layered=True,jumping=jumping,avoid=avoid,water_cost=water_cost,max_drop=max_drop)
                 currentlayer=min(range(len(surfaces[x+y*64])),key=lambda i:abs(surface_height(surfaces[x+y*64][i])-c['z']/64))
                 waypoint=route[0] if route else (x,y,currentlayer)
             target=waypoint
@@ -769,6 +778,7 @@ def main():
     p=sub.add_parser('restore');p.add_argument('--slot',type=int,choices=range(1,5),default=1)
     p=sub.add_parser('go');p.add_argument('role',choices=['host','client']);p.add_argument('x',type=int);p.add_argument('y',type=int)
     p.add_argument('--engage',action='store_true');p.add_argument('--jumping',action='store_true')
+    p.add_argument('--max-drop',type=float,default=1.25,help='Largest planned downward step in original tile-height units; native collision and fall damage still apply')
     p=sub.add_parser('face');p.add_argument('role',choices=['host','client']);p.add_argument('degrees',type=float)
     args=parser.parse_args()
     if args.action=='run':run(args.data,args.duration,args.resume,args.chargen,args.binary)
@@ -780,7 +790,7 @@ def main():
     elif args.action=='fly':fly(args.role,args.x,args.y,args.height)
     elif args.action=='save':command('host','save')
     elif args.action=='restore':restore(args.slot)
-    elif args.action=='go':go(args.role,args.x,args.y,args.engage,args.jumping)
+    elif args.action=='go':go(args.role,args.x,args.y,args.engage,args.jumping,max_drop=args.max_drop)
     elif args.action=='face':face(args.role,args.degrees)
 
 

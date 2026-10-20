@@ -209,6 +209,10 @@ opt-in observer exports world and inventory state and visible object pixels; it
 cannot grant items, change quests/stats, teleport, or make characters invulnerable.
 The input history and named checkpoints preserve both views, native saves, logs,
 and world state. `coverage.json` records the completed and pending routes.
+Inventory moves now detect rejected destinations and walking refuses to start while
+an item remains on the cursor. A native recipe-to-rune-bag rejection verified both
+guards and returning the item without changing either private inventory. Planned
+river descents can use `go --max-drop`; native collision and fall damage still apply.
 
 The live run has exercised level 1 starting equipment, Bragit/Hagbard/Gulik/Drog
 conversations, the shared Hagbard flag, NPC-controlled gates, key use, item transfers,
@@ -290,8 +294,11 @@ initialization requests. The regression reproduces the old growth and checks rep
 entry, viewing and exit with both characters.
 
 The complete main story, all talisman acquisition routes, and optional side quests
-are still in progress. The persistent campaign is on level 3 with no talismans acquired;
-the remaining routes and ending have not been completed in this run.
+are still in progress. The persistent campaign has reached level 4 with no talismans
+acquired. The guest completed Ishtass's Ossikka delivery with the original scroll and
+received the private Wis stone, wand and potion reward. The bandit key and southern
+combat route are cleared; the remaining level 3 routes require a return. The remaining
+talismans and ending have not been completed in this run.
 
 Both Windows binaries build. These scenarios supply prerequisites and call native
 handlers or drive native input; they are **not a completed start-to-finish playthrough**.
