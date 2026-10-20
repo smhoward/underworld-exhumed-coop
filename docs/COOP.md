@@ -150,6 +150,8 @@ python tools/test-shared-world.py --data /path/to/UW1 --campaign puzzles
 python tools/test-shared-world.py --data /path/to/UW1 --campaign ritual
 python tools/test-shared-world.py --data /path/to/UW1 --campaign ending
 python tools/test-shared-world.py --data /path/to/UW1 --campaign terrain
+python tools/test-shared-world.py --data /path/to/UW1 --campaign messages
+python tools/test-shared-world.py --data /path/to/UW1 --campaign hud
 ```
 
 UW1 has been exercised in actual processes for visible avatars, independent movement,
@@ -189,6 +191,13 @@ The campaign scenarios use separate homes under `build/campaign-tests/uw1/`:
   a quiet fixture using level 8's original lava texture damages an unprotected guest,
   respects that guest's boot protection, and preserves the host's health and equipment
   state. The fixture supplies geometry and protection state to isolate these checks.
+- `messages`: the original level 1 orb clue drawn on the alternate native graphics
+  page, host locked-door feedback, and clearing the shared message history. Both
+  camera pictures must contain the same nonblank text, then the same cleared pane.
+- `hud`: separate full/quarter health and full/empty mana, swapping those values,
+  and private poison coloring. Pixel checks detect a companion's stale flask fill
+  in the other view. Native flask art is rebuilt between frames, after erasing old
+  sprite layers, and its pixels are retained for the corresponding camera.
 
 `tools/uw1-playthrough.py` also runs a persistent campaign in isolated homes under
 `build/uw1-playthrough/`. It uses the packaged UW1 executable, original game data,
@@ -225,6 +234,22 @@ rose from 15 to 19 while the host's remained 12. The shrine door requires its bu
 rejection of the red and stone keys there is original game behavior.
 The modern Space attack preference was also found to be shared between characters;
 a native regression reproduced this and now verifies separate remembered choices.
+Further native level 1 play completed Jaacar's privy clue and the hidden healing
+fountain route. The fountain healed the host from 18 to 35 while the guest stayed
+at 19. The guest left the shrine by native long jumps, followed the eastern route,
+opened the original skull door with its private stone key, and looked into the
+original crystal ball. This exposed a missing-client-clue bug: the host could read
+the orb text while the guest's pane stayed blank. Shared HUD text now retains the
+original drawing-page pixels for both views; conversations and cutscenes keep their
+own picture handling. The original client orb lookup has been replayed through
+real TCP input and its displayed text compared in both views.
+The flask redraw also inherited the other character's graphics and left old layers
+behind. Health and mana pictures now use each character's own native art and fill;
+bubble state and poison frame choices remain private. The persistent host at 35/35
+health and guest at 19/40 now have full and partial bottles respectively.
+The playthrough driver observes landing before releasing a native long jump, permits
+walking back from ledge overhangs using the observed footing height, and waits for
+complete native PNG writes before storing checkpoint screenshots.
 The complete main story, all talisman acquisition routes, and optional side quests
 are still in progress; a level 1 checkpoint is not a completed campaign.
 

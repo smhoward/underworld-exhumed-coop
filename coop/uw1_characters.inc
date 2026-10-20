@@ -92,6 +92,10 @@ static void character_art(void)
     memset(invArmorObj,0,6);
     inv_refresh=1;
     if(!character_creating && scrnum==0 && RightPanel!=PANEL_TURNING)pretty_panelagain();
+    if(!character_creating && scrnum==0 && !story_view && modal_owner<0) {
+        int which=atomic_load(&active_seat);
+        port_shared_flasks(flask_pixels[which]);flask_valid[which]=1;
+    }
 }
 
 static void character_prepare(void)

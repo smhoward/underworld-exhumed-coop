@@ -130,6 +130,55 @@ static void campaign_attack_choices(void)
     seat(0);
     fprintf(stderr,"SHARED CAMPAIGN private modern attack selection passed\n");
 }
+static void campaign_scroll_match(int blank)
+{
+    unsigned char rows[2][30*291];int ink=0;
+    pthread_mutex_lock(&shared_lock);
+    for(int owner=0;owner<2;owner++)for(int y=0;y<30;y++)
+        memcpy(rows[owner]+y*291,pictures[owner]+8+768+(169+y)*320+15,291);
+    pthread_mutex_unlock(&shared_lock);
+    campaign_require(!memcmp(rows[0],rows[1],sizeof rows[0]),"ordinary messages differ between host and guest views");
+    for(unsigned i=0;i<sizeof rows[0];i++)ink+=rows[0][i]!=0x2A;
+    campaign_require(blank?ink==0:ink>30,"ordinary message scroll has unexpected contents");
+}
+static int message_stage,message_wait;
+static int campaign_flask_ink(int owner,int flask,int channel)
+{
+    unsigned char frame[SHARED_FRAME];int count=0;
+    pthread_mutex_lock(&shared_lock);memcpy(frame,pictures[owner],sizeof frame);pthread_mutex_unlock(&shared_lock);
+    for(int y=134;y<141;y++)for(int x=0;x<24;x++) {
+        unsigned index=frame[8+768+y*320+(flask?284:248)+x];
+        const unsigned char *color=frame+8+index*3;
+        /* Packet palettes contain the original six-bit VGA components. */
+        if(color[channel]>20 && color[channel]>2*color[(channel+1)%3] && color[channel]>2*color[(channel+2)%3])count++;
+    }
+    return count;
+}
+static void campaign_message_input(int owner)
+{
+    static uint64_t began;
+    const char *mode=getenv("UW_COOP_TEST_CAMPAIGN");
+    if(!mode || strcmp(mode,"messages") || !partner || message_wait)return;
+    if(!began)began=shared_now();
+    if(shared_now()-began<3000)return;
+    /* Run where real input runs, after this seat's redraw/page flip. Calling
+       these handlers between frames conceals the two-view scroll bug. */
+    if(message_stage==0 && owner==1) {
+        int x,y;struct Object *orb=campaign_find(ITEM_ORB,-1,&x,&y);
+        campaign_require(orb!=NULL,"original level one orb missing");
+        /* Exercise the opposite drawing page too: native UI helpers and save
+           restoration can leave either page selected when a message arrives. */
+        grSoftPageFlip();do_main_scroll();LookAt(orb,1);
+        checkTrap(ThePlayer,orb,5,x,y);grSoftPageFlip();message_stage=1;message_wait=2;
+    } else if(message_stage==2 && owner==0) {
+        int x,y;struct Object *door=campaign_find(ITEM_DOOR_145,-1,&x,&y);
+        campaign_require(door!=NULL,"original shrine door missing");
+        do_main_scroll();MapObj_X=x;MapObj_Y=y;UseObj(ThePlayer,door,0);
+        message_stage=3;message_wait=2;
+    } else if(message_stage==4 && owner==1) {
+        do_main_scroll();scroll_clear(1);message_stage=5;message_wait=2;
+    }
+}
 static void campaign_test(void)
 {
     extern void mantra_advance(void);
@@ -139,7 +188,41 @@ static void campaign_test(void)
     if(!mode || !partner)return;
     if(!began)began=now;
     if(now-began<500)return;
-    if(!strcmp(mode,"quests")) {
+    if(!strcmp(mode,"hud")) {
+        if(stage==0) {
+            playerdat->avghit=40;ThePlayer->hp=40;player->max_mana=player->play_mana=16;player->poison=0;
+            seat(1);playerdat->avghit=40;ThePlayer->hp=10;player->max_mana=16;player->play_mana=0;player->poison=0;seat(0);
+            stage=1;began=now;return;
+        }
+        if(stage==1 && now-began>=4000) {
+            fprintf(stderr,"SHARED CAMPAIGN HUD upper fill health=%d,%d mana=%d,%d\n",campaign_flask_ink(0,0,0),campaign_flask_ink(1,0,0),campaign_flask_ink(0,1,2),campaign_flask_ink(1,1,2));
+            campaign_require(campaign_flask_ink(0,0,0)>10 && campaign_flask_ink(1,0,0)==0,"health flasks inherited companion fill");
+            campaign_require(campaign_flask_ink(0,1,2)>5 && campaign_flask_ink(1,1,2)==0,"mana flasks inherited companion fill");
+            fprintf(stderr,"SHARED CAMPAIGN separate full/quarter health and full/empty mana pictures passed\n");
+            ThePlayer->hp=10;player->play_mana=0;
+            seat(1);ThePlayer->hp=40;player->play_mana=16;player->poison=1;seat(0);
+            stage=2;began=now;return;
+        }
+        if(stage==2 && now-began>=4000) {
+            campaign_require(campaign_flask_ink(0,0,0)==0 && campaign_flask_ink(1,0,1)>10,"poisoned flask color/fill leaked between companions");
+            campaign_require(campaign_flask_ink(0,1,2)==0 && campaign_flask_ink(1,1,2)>5,"changed mana fill left stale companion pixels");
+            fprintf(stderr,"SHARED CAMPAIGN swapped health/mana fills and private poison coloring passed\nSHARED CAMPAIGN hud complete\n");stage=100;
+        }
+    } else if(!strcmp(mode,"messages")) {
+        if(message_wait && --message_wait)return;
+        if(message_stage==1) {
+            campaign_scroll_match(0);
+            fprintf(stderr,"SHARED CAMPAIGN original guest orb clue visible to both players passed\n");
+            message_stage=2;
+        } else if(message_stage==3) {
+            campaign_scroll_match(0);
+            fprintf(stderr,"SHARED CAMPAIGN original host locked-door feedback visible to both players passed\n");
+            message_stage=4;
+        } else if(message_stage==5) {
+            campaign_scroll_match(1);
+            fprintf(stderr,"SHARED CAMPAIGN clearing shared message history passed\nSHARED CAMPAIGN messages complete\n");message_stage=100;
+        }
+    } else if(!strcmp(mode,"quests")) {
         if(stage==0) {
             struct Object *npc;
             int16 args[3]={0,1,2};

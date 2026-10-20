@@ -78,6 +78,39 @@ def click(role,x,y,duration=.15):
     command(role,'pointer',x,y,2);time.sleep(duration);command(role,'pointer',x,y,0);time.sleep(.15)
 
 
+def snapshot(role):
+    """Wait for the native PNG writer, whose input ACK precedes the file write."""
+    path=OUT/role/'view.png'
+    previous=path.stat().st_mtime_ns if path.exists() else None
+    command(role,'shot')
+    for _ in range(100):
+        try:
+            data=path.read_bytes()
+            if path.stat().st_mtime_ns!=previous and data.startswith(b'\x89PNG\r\n\x1a\n') and data.endswith(b'\x00\x00\x00\x00IEND\xaeB`\x82'):return data
+        except (FileNotFoundError,PermissionError):pass
+        time.sleep(.02)
+    raise RuntimeError(f'{role} did not finish its native screenshot')
+
+
+def long_jump(role):
+    """Use the modern keys' native standing long jump; observe actual landing."""
+    release_movement(role);which=role=='client';before=state()['characters'][which]
+    if not before.get('grounded',True):raise RuntimeError('Take off from solid footing')
+    trace=[];airborne=False;began=time.monotonic()
+    try:
+        command(role,'key',KEYS['ctrl'],1);command(role,'key',KEYS['shift'],1);time.sleep(.2)
+        command(role,'key',KEYS['shift'],0);command(role,'key',KEYS['ctrl'],0)
+        command(role,'key',KEYS['w'],1)
+        while time.monotonic()-began<4:
+            time.sleep(.05);current=state()['characters'][which];trace.append(current)
+            airborne=airborne or not current.get('grounded',True)
+            if airborne and current.get('grounded',True):return current
+        raise RuntimeError('The native long jump did not take off and land')
+    finally:
+        release_movement(role)
+        (OUT/f'last-jump-{role}.json').write_text(json.dumps({'before':before,'trace':trace},indent=2))
+
+
 def quantity(role,count):
     # UW1 waits for the mouse button to come up before reading the number.
     # Typing while still holding it can select the native right-click "all" shortcut.
@@ -158,7 +191,7 @@ def checkpoint(label):
     shutil.copytree(OUT/'host/SAVE1',destination/'SAVE1',dirs_exist_ok=True)
     (destination/'state.json').write_text(json.dumps(state()))
     for role in ('host','client'):
-        command(role,'shot');shutil.copy(OUT/role/'view.png',destination/(role+'.png'))
+        (destination/(role+'.png')).write_bytes(snapshot(role))
         shutil.copy(OUT/(role+'.log'),destination/(role+'.log'))
 
 
@@ -395,7 +428,11 @@ def path(s,start,target,blocked=None,diagonals=False,max_rise=1,*,start_height=N
             if not diagonals and 2<=b[0]<=5:continue
             for nextlayer,bs in enumerate(surfaces[nx+ny*64]):
                 asurface=surfaces[x+y*64][layer]
-                rise=surface_height(bs,(-direction[0],-direction[1]))-surface_height(asurface,direction)
+                # A character can stand over a low tile while its body still
+                # rests on the adjacent ledge. Start from the observed footing
+                # height so walking back onto that ledge remains reachable.
+                source_height=start_height if at==initial else surface_height(asurface,direction)
+                rise=surface_height(bs,(-direction[0],-direction[1]))-source_height
                 if bs[2]==2 or rise>max_rise:continue
                 if nextlayer==0 and len(surfaces[nx+ny*64])>1 and surface_height(bs)+23/8>surfaces[nx+ny*64][1][1]-.25:continue
                 node=(nx,ny,nextlayer)
@@ -563,6 +600,7 @@ def main():
     p=sub.add_parser('key');p.add_argument('role',choices=['host','client']);p.add_argument('name',choices=sorted(KEYS));p.add_argument('--duration',type=float)
     p=sub.add_parser('pointer');p.add_argument('role',choices=['host','client']);p.add_argument('x',type=int);p.add_argument('y',type=int);p.add_argument('buttons',type=int,nargs='?',default=0)
     p=sub.add_parser('shot');p.add_argument('role',choices=['host','client'])
+    p=sub.add_parser('jump');p.add_argument('role',choices=['host','client'])
     sub.add_parser('save')
     p=sub.add_parser('restore');p.add_argument('--slot',type=int,choices=range(1,5),default=1)
     p=sub.add_parser('go');p.add_argument('role',choices=['host','client']);p.add_argument('x',type=int);p.add_argument('y',type=int)
@@ -573,7 +611,8 @@ def main():
     elif args.action=='state':summary()
     elif args.action=='key':key(args.role,args.name,args.duration)
     elif args.action=='pointer':command(args.role,'pointer',args.x,args.y,args.buttons)
-    elif args.action=='shot':command(args.role,'shot')
+    elif args.action=='shot':snapshot(args.role)
+    elif args.action=='jump':long_jump(args.role)
     elif args.action=='save':command('host','save')
     elif args.action=='restore':restore(args.slot)
     elif args.action=='go':go(args.role,args.x,args.y,args.engage,args.jumping)

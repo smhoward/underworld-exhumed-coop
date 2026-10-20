@@ -64,6 +64,9 @@ void far init_scroll(void)
     scroll_mode = 0;
     draw_scroll(0x0F, 0x1E, 0x131, 1, 0);
     draw_edges();
+#ifndef __TURBOC__
+    port_shared_scroll();
+#endif
 }
 
 /* Whether the cursor touches the current scroll's box, so printing must hide it first. */
@@ -234,6 +237,9 @@ int far scroll_print(char far *s)
     scroll_print1(copy, 0);
 
     click_time = GAME_TIME();
+#ifndef __TURBOC__
+    port_shared_scroll();
+#endif
     if (mouse_in_scroll)
         mouse_show();
     return scroll->start_line;
@@ -466,6 +472,9 @@ void far scroll_clear(char redraw)
         draw_edges();
     } else
         draw_conv_edges();
+#ifndef __TURBOC__
+    port_shared_scroll();
+#endif
     if (redraw && mouse_in_scroll)
         mouse_show();
 }

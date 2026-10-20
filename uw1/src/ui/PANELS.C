@@ -399,12 +399,18 @@ void far update_screen(void)
 
 /* Moves flask which one step towards its goal (filling or draining) and animates its
    bubbles; the vitality flask switches to the green set while the player is poisoned. */
+#ifndef __TURBOC__
+static int16 bub_frame[2] = { ICON_FLASKS + 0xD, ICON_FLASKS + 0x26 };
+static int16 bub_spr[2], drain_spr[2], mask_spr[2];
+#endif
 void far adjust_flasks(int which)
 {
+#ifdef __TURBOC__
     static int16 bub_frame[2] = { ICON_FLASKS + 0xD, ICON_FLASKS + 0x26 };
     static int16 bub_spr[2] = { 0, 0 };
     static int16 drain_spr[2] = { 0, 0 };
     static int16 mask_spr[2] = { 0, 0 };
+#endif
     /* match: a register copy of the parameter, as in UW2 */
     register int f = which;
     register int n;
@@ -1339,24 +1345,63 @@ void far player_look_grave(int grave)
 }
 
 #ifndef __TURBOC__
+extern const unsigned char *vga_plane(int plane);
+void port_shared_flasks(unsigned char *pixels)
+{
+    int f;
+    if(!port_shared_on() || scrnum!=0)return;
+    /* Sprite backgrounds belong to the last camera that drew them. Remove
+       those layers before rebuilding this character's two original flasks. */
+    for(f=0;f<2;f++) {
+        erase_sprite(level[f]);
+        if(bub_spr[f])erase_sprite(bub_spr[f]);
+        if(drain_spr[f])erase_sprite(drain_spr[f]);
+        if(mask_spr[f])erase_sprite(mask_spr[f]);
+    }
+    update_sprites();
+    for(f=0;f<2;f++) {
+        unsigned char target=goal[f];
+        goal[f]=setting[f];set_flask(f);goal[f]=target;
+        if(bubbling[f] && setting[f]>0 && setting[f]<8) {
+            move_sprite(bub_spr[f],FL_X[f],liquid_y[setting[f]]);
+            draw_sprite(bub_spr[f],bub_frame[f]);
+            set_yoff(mask_spr[f],0x4A-liquid_y[setting[f]]);
+            move_sprite(mask_spr[f],FL_X[f],liquid_y[setting[f]]);
+            draw_mask(mask_spr[f],ICON_FLASKS+0x4C);update_sprites();
+        }
+    }
+    /* UI drawing can target either native page. Copy this character's clean
+       original-art flasks into its outgoing camera picture. */
+    for(f=0;f<2;f++)for(int y=0;y<33;y++)for(int x=0;x<24;x++) {
+        int px=FL_X[f]+x,py=0x4A-y;
+        pixels[(f*33+y)*24+x]=vga_plane(px&3)[(uint16)(Ytab[py]+(px>>2))];
+    }
+}
+
 /* Native co-op switches the persistent weapon animation and panel clocks.
    last_weap describes the art actually loaded, so it remains a global cache. */
 void port_shared_panel_state(int which,int save)
 {
     static struct {
         unsigned char setting[9],goal[9],panel;
+        unsigned char bubbles[2];
+        int16 bubble_frames[2];
         int16 slow,fast,now,frame,xo,fo;
         char weapon,state;
     } seats[2];
     static int initialized;
     if(which<0){memset(&seats[1],0,sizeof seats[1]);seats[1].weapon=-1;seats[1].frame=-1;seats[1].fo=1;
+        seats[1].bubble_frames[0]=ICON_FLASKS+0xD;seats[1].bubble_frames[1]=ICON_FLASKS+0x26;
         seats[1].setting[SCR_WEAPON]=seats[1].goal[SCR_WEAPON]=seats[1].state=WEAP_SHEATHED;return;}
 #define FIELD(member,global) do{if(save)seats[which].member=global;else global=seats[which].member;}while(0)
-    if(!initialized){seats[1].weapon=-1;seats[1].frame=-1;seats[1].fo=1;initialized=1;}
+    if(!initialized){seats[1].weapon=-1;seats[1].frame=-1;seats[1].fo=1;
+        seats[1].bubble_frames[0]=ICON_FLASKS+0xD;seats[1].bubble_frames[1]=ICON_FLASKS+0x26;initialized=1;}
     if(save){memcpy(seats[which].setting,setting,9);memcpy(seats[which].goal,goal,9);}
     else{memcpy(setting,seats[which].setting,9);memcpy(goal,seats[which].goal,9);}
     FIELD(slow,slow_adjust);FIELD(fast,fast_adjust);FIELD(now,now_adjust);
     FIELD(frame,weap_frame);FIELD(xo,wxo);FIELD(fo,wfo);FIELD(weapon,weapid);FIELD(state,wlstate);FIELD(panel,RightPanel);
+    if(save){memcpy(seats[which].bubbles,bubbling,sizeof bubbling);memcpy(seats[which].bubble_frames,bub_frame,sizeof bub_frame);}
+    else{memcpy(bubbling,seats[which].bubbles,sizeof bubbling);memcpy(bub_frame,seats[which].bubble_frames,sizeof bub_frame);}
     if(!save) {
         static int hand=-1;
         if(hand!=player->lefty){last_weap=-1;hand=player->lefty;}

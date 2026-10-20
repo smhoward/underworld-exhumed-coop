@@ -16,6 +16,8 @@ void port_shared_key(uint8_t code);
 void port_shared_pointer(const struct PlatPointer *event);
 void port_shared_scanout(unsigned char *pixels,int *w,int *h,unsigned char palette[768]);
 void port_shared_flip(void);
+void port_shared_scroll(void);
+void port_shared_flasks(unsigned char *pixels);
 void port_shared_reset(void);
 void port_shared_before_save(void);
 int port_shared_avatar(const void *object);

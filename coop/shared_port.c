@@ -63,6 +63,12 @@ static struct Object *test_door;
 static uint32_t guest_time;
 static int in_step;
 static int modal_owner=-1,story_view;
+#if COOP_GAME == 1
+static unsigned char message_pixels[30*291];
+static int message_valid;
+static unsigned char flask_pixels[2][2*33*24];
+static int flask_valid[2];
+#endif
 extern char KeybUsed;
 extern int16 pTurn,MaxPlayerAccel,lastTerr,plyMoType;
 extern unsigned char doMod;
@@ -185,6 +191,9 @@ void port_shared_reset(void)
 {
     unsigned char *mob;
     resume_guest=0;
+#if COOP_GAME == 1
+    if(!in_game)message_valid=0;
+#endif
     if(!enabled || !atomic_load(&connected) || !in_game)companion_health=-1;
     if(!enabled || !partner)return;
 #if COOP_GAME == 1
@@ -296,12 +305,35 @@ void port_shared_guest_physics(void)
     make_noise(0);
 #endif
 }
+void port_shared_scroll(void)
+{
+#if COOP_GAME == 1
+    if(!enabled || port_coop_role()!=COOP_HOST || !in_game || scrnum!=0 || scroll!=&main_scroll)return;
+    /* Scroll printing draws directly into the currently selected VGA page.
+       The two camera redraws need not display that page's message area. Keep
+       the native text pixels, independently of the active camera/page. */
+    for(int y=0;y<30;y++)for(int x=0;x<291;x++)
+        message_pixels[y*291+x]=vga_plane((15+x)&3)[(uint16_t)(Ytab[30-y]+((15+x)>>2))];
+    message_valid=1;
+#endif
+}
 static void capture(int which)
 {
     unsigned char frame[SHARED_FRAME],pixels[640*480];int w,h;
     vga_scanout_now(pixels,&w,&h,frame+8);
     if(w!=320 || h!=200)return;
+#if COOP_GAME == 1
+    if(flask_valid[which] && in_game && scrnum==0 && !story_view && modal_owner<0)
+        for(int f=0;f<2;f++)for(int y=0;y<33;y++)
+            memcpy(pixels+(125+y)*320+(f?284:248),flask_pixels[which]+(f*33+y)*24,24);
+#endif
     memcpy(frame+8+768,pixels,SHARED_PIXELS);
+#if COOP_GAME == 1
+    /* Conversations, maps, MORE prompts and cutscenes already own their shared
+       pictures. Ordinary HUD messages use the latest original scroll pixels. */
+    if(message_valid && in_game && scrnum==0 && !story_view && modal_owner<0)
+        for(int y=0;y<30;y++)memcpy(frame+8+768+(169+y)*320+15,message_pixels+y*291,291);
+#endif
     put16(frame,w);put16(frame+2,h);frame[4]=(unsigned char)port_shared_mouse_look();
     frame[5]=(unsigned char)(partner!=NULL);frame[6]=(unsigned char)(story_view>0 || modal_owner>=0);frame[7]=0;
     pthread_mutex_lock(&shared_lock);memcpy(pictures[which],frame,sizeof frame);
@@ -358,14 +390,22 @@ int port_shared_step(void)
 #if COOP_GAME == 1
     bot_can_save=1;bot_input();bot_can_save=0;
 #endif
-    port_shared_poll_input();do_changes();input_dispatch(inplist);capture(0);
+    port_shared_poll_input();do_changes();input_dispatch(inplist);
+#if COOP_GAME == 1
+    campaign_message_input(0);
+#endif
+    capture(0);
 #if COOP_GAME == 1
     bot_attack(0);
     bot_targets(0);
 #endif
     if(partner && partner_level==PlayerLevel && (ThePlayer->hp || partner->hp)) {
         mouse_hide();seat(1);port_shared_poll_input();
-        do_changes();input_dispatch(inplist);capture(1);
+        do_changes();input_dispatch(inplist);
+#if COOP_GAME == 1
+        campaign_message_input(1);
+#endif
+        capture(1);
 #if COOP_GAME == 1
         bot_attack(1);
         bot_targets(1);
