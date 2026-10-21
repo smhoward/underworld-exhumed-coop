@@ -41,6 +41,7 @@ struct Object;
 void port_shared_killed(int index,struct Object *npc);
 char port_shared_death_check(struct Object *npc,char mode);
 int port_shared_death(void);
+int port_shared_recovering(const void *avatar);
 int port_shared_guest_travel(void);
 void port_shared_modal(int mode);
 void port_shared_story(int showing);

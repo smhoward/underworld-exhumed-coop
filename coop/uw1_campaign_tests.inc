@@ -251,7 +251,83 @@ static void campaign_test(void)
     if(!mode || !partner)return;
     if(!began)began=now;
     if(now-began<500)return;
-    if(!strcmp(mode,"orbs")) {
+    if(!strcmp(mode,"revival")) {
+        static struct Object *enemies[2];
+        static uint32_t experience[2];
+        static uint64_t revived;
+        extern int16 pQatt,attackKey;
+        extern int far frp_check(int attacker,int defender);
+        if(stage==0){campaign_arrive(5,53,50);stage=1;return;}
+        if(stage==1) {
+            int x,y;
+            /* Quiet setup in the original crypt geometry. Damage and recovery
+               below use the same entry points as live creature attacks. */
+            MoveCrits=0;
+            enemies[0]=campaign_find(ITEM_GHOST_61,-1,&x,&y);
+            enemies[1]=campaign_find(ITEM_SKELETON,-1,&x,&y);
+            for(int i=0;i<2;i++) {
+                struct Object *npc=enemies[i];
+                campaign_require(npc && npc->hp,"original crypt enemy missing");
+                Obj_Rem(&Map_GetAddr(OBJ_HOMEX(npc),OBJ_HOMEY(npc))->objects,npc);
+                SET_HOMEX(npc,55-i*2);SET_HOMEY(npc,51);
+                SET_FINEX(npc,3);SET_FINEY(npc,3);SET_ATTITUDE(npc,ATT_HOSTILE);
+                Obj_Add(&Map_GetAddr(55-i*2,51)->objects,npc);
+            }
+            for(int owner=0;owner<2;owner++) {
+                seat(owner);player_setup(54,51,1);player->exp=3000;
+                ThePlayer->hp=30;player->talismans=8;experience[owner]=player->exp;
+            }
+            seat(0);stage=2;
+        }
+        if(stage==2 || stage==4) {
+            int owner=(stage-2)/2;
+            seat(owner);experience[owner]=player->exp;
+            ThePlayer->hp=0;player->poison=3;pQatt=-2;attackKey=0x39;
+            player_is_dead();revived=shared_now();
+            experience[owner]-=experience[owner]>>3;
+            campaign_require(ThePlayer->hp && !player->poison && player->exp==experience[owner],"recovery did not apply one private death penalty");
+            campaign_require(!pQatt && attackKey==-1,"recovery retained interrupted attack");
+            campaign_require(port_shared_recovering(ThePlayer),"revived character has no recovery window");
+            struct Tile *tile=Map_GetAddr(OBJ_HOMEX(ThePlayer),OBJ_HOMEY(ThePlayer));
+            campaign_require(tile->floor>=TXM_FLOORS || !((TxmTerr[tile->floor]>>4)==TERRAIN_WATER || (TxmTerr[tile->floor]>>4)==TERRAIN_LAVA),"recovery chose hazardous terrain");
+            unsigned hp=ThePlayer->hp;
+            for(int i=0;i<2;i++) {
+                struct Object *npc=enemies[i];
+                int dx=(int)OBJ_HOMEX(npc)*8+OBJ_FINEX(npc)-(OBJ_HOMEX(ThePlayer)*8+OBJ_FINEX(ThePlayer));
+                int dy=(int)OBJ_HOMEY(npc)*8+OBJ_FINEY(npc)-(OBJ_HOMEY(ThePlayer)*8+OBJ_FINEY(ThePlayer));
+                campaign_require(dx*dx+dy*dy>=24*24,"crypt recovery remains in enemy reach");
+                damage_item(ThePlayer,npc,OBJ_HOMEX(ThePlayer),OBJ_HOMEY(ThePlayer),255,DMG_PHYSICAL);
+                campaign_require(ThePlayer->hp==hp && frp_check(Obj_MemTPtr(npc),Obj_MemTPtr(ThePlayer))==1,"enemy attack bypassed recovery protection");
+                campaign_require(npc->hp && Obj_Find(&Map_GetAddr(OBJ_HOMEX(npc),OBJ_HOMEY(npc))->objects,1,Obj_MemTPtr(npc))==npc,"recovery removed a living enemy");
+            }
+            seat(1-owner);hp=ThePlayer->hp;experience[1-owner]=player->exp;
+            campaign_require(!port_shared_recovering(ThePlayer),"recovery protected the other character");
+            damage_item(ThePlayer,enemies[0],OBJ_HOMEX(ThePlayer),OBJ_HOMEY(ThePlayer),1,DMG_PHYSICAL);
+            fprintf(stderr,"SHARED REVIVAL companion owner=%d HP=%u->%u XP=%lu expected=%lu\n",1-owner,hp,ThePlayer->hp,(unsigned long)player->exp,(unsigned long)experience[1-owner]);
+            campaign_require(ThePlayer->hp<hp && player->exp==experience[1-owner],"recovery changed companion damage or experience");
+            seat(0);stage++;return;
+        }
+        if((stage==3 || stage==5) && now-revived>=4200) {
+            int owner=(stage-3)/2;seat(owner);
+            unsigned hp=ThePlayer->hp;
+            campaign_require(!port_shared_recovering(ThePlayer),"recovery protection did not expire");
+            damage_item(ThePlayer,enemies[0],OBJ_HOMEX(ThePlayer),OBJ_HOMEY(ThePlayer),1,DMG_PHYSICAL);
+            campaign_require(ThePlayer->hp<hp,"expired recovery still blocks damage");
+            fprintf(stderr,"SHARED CAMPAIGN revival owner %d safe placement, private penalty, protection and expiry passed\n",owner);
+            seat(0);stage++;
+        }
+        if(stage==6) {
+            for(int owner=0;owner<2;owner++) {
+                seat(owner);experience[owner]=player->exp;
+                player->talismans=0;ThePlayer->hp=0;player_is_dead();
+                campaign_require(ThePlayer->hp==4 && player->exp==experience[owner],"post-ritual native immortality charged a co-op penalty");
+                campaign_require(!port_shared_recovering(ThePlayer),"post-ritual immortality invoked co-op recovery");
+            }
+            seat(0);fprintf(stderr,"SHARED CAMPAIGN native post-ritual immortality preserves both private experience totals passed\n");
+            fprintf(stderr,"SHARED CAMPAIGN revival complete\n");stage=100;
+        }
+    }
+    else if(!strcmp(mode,"orbs")) {
         if(stage==0){campaign_arrive(4,55,45);stage=1;began=now;return;}
         if(stage==1 && now-began>=4000) {
             int x,y;int16 buttons;

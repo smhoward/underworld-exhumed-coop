@@ -365,6 +365,7 @@ int far frp_check(int attacker, int defender)
 #undef frp_check
 int far frp_check(int attacker,int defender)
 {
+    if(port_shared_recovering(Obj_IntTMem(defender)))return 1;
     if(attacker!=defender && port_shared_player_index(attacker) && port_shared_player_index(defender))return 1;
     int old=port_shared_context(defender);
     int result=shared_frp_check(attacker,defender);

@@ -60,11 +60,16 @@ def key(role,name,duration=None):
     command(role,op,code,0)
 
 
-def targets(role):
-    for _ in range(20):
-        try:return json.loads((OUT/'host'/f'targets-{role}.json').read_text())
+def targets(role,*,fresh=False):
+    path=OUT/'host'/f'targets-{role}.json'
+    previous=path.stat().st_mtime_ns if fresh and path.exists() else None
+    for _ in range(40):
+        try:
+            if fresh and path.stat().st_mtime_ns==previous:
+                time.sleep(.05);continue
+            return json.loads(path.read_text())
         except (FileNotFoundError,PermissionError,json.JSONDecodeError):time.sleep(.05)
-    raise RuntimeError('Visible targets unavailable')
+    raise RuntimeError('Visible targets did not refresh; inspect the native screen and host log')
 
 
 def mode(role,number):
@@ -212,7 +217,9 @@ def interact(role,index,action='use',destination=None):
         raise RuntimeError('Put the held object in an inventory slot before picking up another object')
     mode(role,{'use':1,'fight':2,'look':3,'get':4,'talk':5}[action])
     obj=next((o for o in state()['objects'] if o['index']==index),None)
-    found=next((t for t in targets(role) if t['index']==index),None)
+    # Camera/lever changes can leave the previous frame's picking pixels on disk.
+    # Wait for the acting camera's next native pick buffer before clicking it.
+    found=next((t for t in targets(role,fresh=True) if t['index']==index),None)
     if not found:raise RuntimeError(f'Object {index} is outside {role} view')
     before=carried_count(state(),which,obj['item']) if action=='get' and destination else None
     mark=message_mark()
@@ -453,9 +460,16 @@ def talk(role,name,choices=()):
 
 def melee_style(s,which,enemy):
     c=s['characters'][which];avatar=next(o for o in s['objects'] if o['index']==c['index'])
+    weapon=c['inventory'][8-c['lefty']]
+    held=next((o for o in s['objects'] if o['index']==weapon),None)
+    # COMBAT.C resolve_attack uses a volume, not a flat ray. For a weapon,
+    # GetPlayerWeapon takes its reach from the original ComObjData radius.
+    # Four fine units is a conservative lower bound for an unarmed probe.
+    reach=held['radius'] if held and held['item']<16 else 0
+    height=(reach*2+1)*4
     for style,third in ((';',2),('.',1),('p',3)):
-        plane=int(c['z']/8)+avatar['height']*third//3
-        if enemy['z']<=plane<enemy['z']+enemy['height']:return style
+        plane=int(c['z']/8)+avatar['height']*third//3+int(c.get('pitch',0)/512)
+        if plane<enemy['z']+enemy['height'] and plane+height>enemy['z']:return style
     return None
 
 

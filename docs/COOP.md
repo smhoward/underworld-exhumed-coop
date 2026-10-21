@@ -157,6 +157,7 @@ python tools/test-shared-world.py --data /path/to/UW1 --campaign observer
 python tools/test-shared-world.py --data /path/to/UW1 --campaign camp
 python tools/test-shared-world.py --data /path/to/UW1 --campaign division
 python tools/test-shared-world.py --data /path/to/UW1 --campaign orbs
+python tools/test-shared-world.py --data /path/to/UW1 --campaign revival
 ```
 
 UW1 has been exercised in actual processes for visible avatars, independent movement,
@@ -217,6 +218,10 @@ The campaign scenarios use separate homes under `build/campaign-tests/uw1/`:
 - `orbs`: hold the original level-4 crystal-ball trigger through native mouse input;
   both transmitted viewports must match the changed native vision. Releasing the
   button restores separate cameras without moving or damaging either avatar.
+- `revival`: revive each character in the original crypt geometry, avoiding nearby
+  hostile creatures and hazardous floors. Check the private death penalty, cancelled
+  attack, four-second recovery protection, ordinary companion damage, expiry, living
+  enemies and the original post-ritual four-HP immortality rule.
 
 `tools/uw1-playthrough.py` also runs a persistent campaign in isolated homes under
 `build/uw1-playthrough/`. It uses the packaged UW1 executable, original game data,
@@ -382,6 +387,14 @@ Bullfrog stairs. The guest recovered Caliburn's original hilt while retaining it
 blade, and the host opened the secret route into Cabirus's crypt and read its
 memorial. The remaining talismans, later levels, ending and optional routes are
 still pending in this campaign.
+
+The crypt fight exposed repeated deaths immediately after revival beside the same
+enemies. Co-op rescue now prefers dry ground outside nearby hostile creatures'
+reach, cancels the interrupted attack and protects only the revived character for
+four real seconds. It retains the existing experience penalty and inventory. The
+native regression checks both characters and confirms ordinary damage resumes when
+the window expires. After the final talisman sacrifice, co-op now delegates to the
+original four-HP immortality rule without charging an extra death penalty.
 
 Both Windows binaries build. These scenarios supply prerequisites and call native
 handlers or drive native input; they are **not a completed start-to-finish playthrough**.

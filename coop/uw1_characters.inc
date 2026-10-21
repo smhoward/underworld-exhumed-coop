@@ -40,6 +40,7 @@ static int character_ready,character_creating;
 static unsigned char character_image[CHARACTER_IMAGE_CAP];
 static int character_image_length,character_image_carrying;
 static int character_level,character_x,character_y,character_z,character_facing;
+static uint64_t recovery_until[2];
 
 /* These are campaign facts, including flags which can be cleared or toggled.
    Copy the latest values; OR-ing records would lose reset/toggle semantics. */
@@ -212,6 +213,7 @@ void port_shared_campaign_reset(void)
     port_shared_combat_state(-1,0);port_shared_panel_state(-1,0);
     port_shared_movement_state(-1,0);
     modal_owner=-1;
+    recovery_until[0]=recovery_until[1]=0;
 }
 
 void port_shared_campaign_load(void)
@@ -220,6 +222,7 @@ void port_shared_campaign_load(void)
     struct Player rec;size_t size,wanted;unsigned image;int phase=1;
     FILE *fp;
     if(!enabled)return;
+    recovery_until[0]=recovery_until[1]=0;
     fp=fopen("SAVE0\\coop2.dat","rb");
     if(!fp)fp=fopen("SAVE0\\coop2.bak","rb");
     if(!fp)return; /* Solo save: create a new guest. */
@@ -296,20 +299,39 @@ char port_shared_death_check(struct Object *npc,char mode)
     port_shared_context_end(old);return result;
 }
 
+int port_shared_recovering(const void *avatar)
+{
+    if(!port_shared_avatar(avatar))return 0;
+    return shared_now()<recovery_until[avatar==partner ? 1 : 0];
+}
 int port_shared_death(void)
 {
     struct Object *other;
     int16 x,y;
     if(!enabled || !partner)return 0;
+    /* The original post-ritual rule restores four HP without a death penalty. */
+    if(!player->talismans)return 0;
     other=atomic_load(&active_seat) ? critdata+1 : partner;
     if(!other->hp)return 0;
     /* A live companion keeps the adventure going; no items are created or copied. */
     player_get_exp(-(int)(player->exp>>3));player->poison=0;
     ThePlayer->hp=playerdat->avghit/4+1;
+    clear_fight_state();
     /* The native "clear" search can cull living plot NPCs without their death
        scripts. A rescue must find space without deleting the shared world. */
-    if(shared_find_position(ThePlayer,OBJ_HOMEX(other),OBJ_HOMEY(other),&x,&y,1))player_setup(x,y,1);
-    scroll_print("Your companion brings you back to your feet.\n");editchng(0x7FFE);return 1;
+    int found=0;
+    revival_dry=1;
+    for(int distance=3;distance>=0 && !found;distance--) {
+        revival_distance=distance;
+        found=shared_find_position(ThePlayer,OBJ_HOMEX(other),OBJ_HOMEY(other),&x,&y,1);
+    }
+    revival_dry=revival_distance=0;
+    if(!found)found=shared_find_position(ThePlayer,OBJ_HOMEX(other),OBJ_HOMEY(other),&x,&y,1);
+    if(found)player_setup(x,y,1);
+    /* Co-op rescue has no DOS equivalent. Give the revived character time to
+       leave a fight instead of charging another death at the companion's feet. */
+    recovery_until[atomic_load(&active_seat)]=shared_now()+4000;
+    scroll_print("Your companion brings you back to your feet. You are briefly protected.\n");editchng(0x7FFE);return 1;
 }
 
 static struct {int pending;int16 x,y,level;char fade;void (*fn)(void);} party_travel;

@@ -103,6 +103,27 @@ static void state(struct seat_state *s,int save);
 static uint64_t shared_now(void);
 static int placement_guard;
 static const struct Object *placement_other;
+#if COOP_GAME == 1
+static int revival_dry,revival_distance;
+static int shared_revival_tile_safe(int x,int y)
+{
+    struct Tile *tile=&mapdata[x+y*64];
+    if(revival_dry && tile->floor<TXM_FLOORS) {
+        int terrain=TxmTerr[tile->floor]>>4;
+        if(terrain==TERRAIN_WATER || terrain==TERRAIN_LAVA)return 0;
+    }
+    if(revival_distance)for(unsigned char *p=ActiveMob;p<LastActiveMob;p++) {
+        struct Object *npc=critdata+*p;
+        if(npc==critdata+1 || npc==partner || !npc->hp || OBJ_MAJOR(npc)!=MAJOR_CREATURE ||
+           (OBJ_ATTITUDE(npc)>ATT_UPSET && OBJ_GOAL(npc)!=GOAL_ATTACK))continue;
+        int dx=(int)OBJ_HOMEX(npc)*8+OBJ_FINEX(npc)-(x*8+3);
+        int dy=(int)OBJ_HOMEY(npc)*8+OBJ_FINEY(npc)-(y*8+3);
+        int radius=revival_distance*8;
+        if(dx*dx+dy*dy<radius*radius)return 0;
+    }
+    return 1;
+}
+#endif
 static int shared_spawn_tile_safe(int x,int y)
 {
 #if COOP_GAME == 1
@@ -122,7 +143,11 @@ int port_shared_placement_ok(int x,int y)
 {
     if(!placement_guard)return 1;
     if(placement_other && x==OBJ_HOMEX(placement_other) && y==OBJ_HOMEY(placement_other))return 0;
-    return shared_spawn_tile_safe(x,y);
+    if(!shared_spawn_tile_safe(x,y))return 0;
+#if COOP_GAME == 1
+    if(!shared_revival_tile_safe(x,y))return 0;
+#endif
+    return 1;
 }
 static int shared_find_position(struct Object *obj,int x,int y,int16 *outx,int16 *outy,int separate)
 {
