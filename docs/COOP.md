@@ -156,6 +156,7 @@ python tools/test-shared-world.py --data /path/to/UW1 --campaign maps
 python tools/test-shared-world.py --data /path/to/UW1 --campaign observer
 python tools/test-shared-world.py --data /path/to/UW1 --campaign camp
 python tools/test-shared-world.py --data /path/to/UW1 --campaign division
+python tools/test-shared-world.py --data /path/to/UW1 --campaign orbs
 ```
 
 UW1 has been exercised in actual processes for visible avatars, independent movement,
@@ -213,6 +214,9 @@ The campaign scenarios use separate homes under `build/campaign-tests/uw1/`:
 - `division`: compare the port's texture-projection and smooth-clipping overflow
   recovery with the original translated interrupt handlers, including repeated
   halving and zero-divisor recovery, flags and emulated stack balance.
+- `orbs`: hold the original level-4 crystal-ball trigger through native mouse input;
+  both transmitted viewports must match the changed native vision. Releasing the
+  button restores separate cameras without moving or damaging either avatar.
 
 `tools/uw1-playthrough.py` also runs a persistent campaign in isolated homes under
 `build/uw1-playthrough/`. It uses the packaged UW1 executable, original game data,
@@ -312,8 +316,8 @@ initialization requests. The regression reproduces the old growth and checks rep
 entry, viewing and exit with both characters.
 
 The complete main story, all talisman acquisition routes, and optional side quests
-are still in progress. The persistent campaign has reached level 4 and returned to
-level 3, where the guest acquired the original Taper of Sacrifice through Zak's native
+are still in progress. The persistent campaign has reached level 5 through the
+Bullfrog route. On an earlier return to level 3, the guest acquired the original Taper of Sacrifice through Zak's native
 barter. Back on level 4, the guest defeated Rodrick, and Dorna recognized that victory
 when the host spoke to him and received the Standard of Honor. These two original
 talismans remain in separate inventories. The guest completed Ishtass's
@@ -354,6 +358,30 @@ smooth-clipping retries. `--campaign division` compares the adapter's registers,
 flags and stack with the original handlers; it reproduces the missing-handler
 failure before the repair and passes afterwards. The complete campaign remains
 in progress.
+
+The saved campaign also completed Trisch's recovered-Taper acknowledgment and
+Sethar's pit, including its original rune pouch, scroll and secret exit. The host
+built both Bullfrog ramps with the original selectors and buttons while the guest
+crossed them. Lowering and raising the guest's occupied platform changed its native
+footing from 12 to 10 and back to 12, leaving the host at the controls. The guest
+crossed the northeast gap and used a running jump from the southern ramp to recover
+the hidden Fireball wand and potion. The driver now waits for zero vertical velocity
+and acceleration before reporting a landing; the ground-contact bit alone can be
+set while an avatar is still rising beside a ledge.
+
+The hidden orb exposed another display omission: its native fade wrote directly
+to video memory while the ordinary two-seat frame loop was blocked. Neither co-op
+window received the remote view. The fade now uses the existing shared-scene scope;
+the regression fails on the old behavior and matches both viewports to native video
+memory after the repair. Replaying the actual campaign's held Look action shows the
+same northwest mage room in both windows, keeps both positions unchanged and returns
+to separate cameras on release.
+
+Both characters then entered the original level-5 tombs through the northern
+Bullfrog stairs. The guest recovered Caliburn's original hilt while retaining its
+blade, and the host opened the secret route into Cabirus's crypt and read its
+memorial. The remaining talismans, later levels, ending and optional routes are
+still pending in this campaign.
 
 Both Windows binaries build. These scenarios supply prerequisites and call native
 handlers or drive native input; they are **not a completed start-to-finish playthrough**.

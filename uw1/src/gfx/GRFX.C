@@ -273,6 +273,11 @@ void far fill_FB(int colour)
    (mouse_release), then fade back to the player's eye. */
 void far cameras_fade(void)
 {
+#ifndef __TURBOC__
+    /* The crystal ball fades directly into video memory and waits inside
+       mouse_release. Stream that shared vision while the seat loop is blocked. */
+    port_shared_story(1);
+#endif
     render_FB();
     attach_eye(-1);
     fadeout3d(5);
@@ -284,4 +289,7 @@ void far cameras_fade(void)
     attach_eye(1);
     render_FB();
     fadein3d(5);
+#ifndef __TURBOC__
+    port_shared_story(0);
+#endif
 }

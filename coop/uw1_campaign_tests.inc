@@ -4,6 +4,30 @@
 #include "x86/asmrt.h"
 static void campaign_require(int ok,const char *what)
 {if(!ok)port_fatal("shared campaign test: %s",what);}
+static int orb_testing,orb_checked;
+static uint64_t orb_started;
+static unsigned char orb_before[SHARED_PIXELS];
+static void campaign_orb_frame(void)
+{
+    unsigned char pixels[640*480],palette[768];int w,h,different=0,matches[2]={1,1};
+    if(!orb_testing || orb_checked || shared_now()-orb_started<400)return;
+    vga_scanout_now(pixels,&w,&h,palette);
+    if(w!=320 || h!=200)return;
+    /* The native fade writes directly to video memory while the ordinary
+       two-seat frame loop is blocked. Check the actual transmitted views. */
+    pthread_mutex_lock(&shared_lock);
+    for(int y=20;y<124;y++)for(int x=52;x<224;x++) {
+        int at=y*320+x;
+        different+=pixels[at]!=orb_before[at];
+        for(int owner=0;owner<2;owner++)
+            if(pictures[owner][8+768+at]!=pixels[at])matches[owner]=0;
+    }
+    pthread_mutex_unlock(&shared_lock);
+    if(different<100)return;
+    fprintf(stderr,"SHARED ORB native changed=%d host=%d guest=%d\n",different,matches[0],matches[1]);
+    campaign_require(matches[0] && matches[1],"held crystal-ball view was not streamed to both players");
+    orb_checked=1;
+}
 static void campaign_divide_recovery(void)
 {
     struct asm_state saved;
@@ -227,7 +251,28 @@ static void campaign_test(void)
     if(!mode || !partner)return;
     if(!began)began=now;
     if(now-began<500)return;
-    if(!strcmp(mode,"division")) {
+    if(!strcmp(mode,"orbs")) {
+        if(stage==0){campaign_arrive(4,55,45);stage=1;began=now;return;}
+        if(stage==1 && now-began>=4000) {
+            int x,y;int16 buttons;
+            struct Object *orb=campaign_find(ITEM_ORB,-1,&x,&y);
+            campaign_require(orb!=NULL,"original level four orb missing");
+            seat(1);port_shared_poll_input();mouse_getbut(&buttons);
+            if(!(buttons&2)){seat(0);return;}
+            int px[2]={seats[0].physics.x,PN.x},py[2]={seats[0].physics.y,PN.y};
+            int hp[2]={critdata[1].hp,partner->hp};
+            pthread_mutex_lock(&shared_lock);memcpy(orb_before,pictures[1]+8+768,SHARED_PIXELS);pthread_mutex_unlock(&shared_lock);
+            orb_started=shared_now();orb_testing=1;
+            checkTrap(ThePlayer,orb,5,x,y);
+            orb_testing=0;
+            campaign_require(orb_checked,"held original orb did not show its remote view");
+            campaign_require(PN.x==px[1] && PN.y==py[1] && seats[0].physics.x==px[0] && seats[0].physics.y==py[0] && critdata[1].hp==hp[0] && partner->hp==hp[1],"crystal ball moved or damaged a player");
+            seat(0);campaign_require(!story_view,"crystal-ball view did not return to separate cameras");
+            fprintf(stderr,"SHARED CAMPAIGN original held orb view reaches both players and preserves avatars passed\n");
+            fprintf(stderr,"SHARED CAMPAIGN orbs complete\n");stage=100;
+        }
+    }
+    else if(!strcmp(mode,"division")) {
         if(stage==0) {
             campaign_divide_recovery();
             fprintf(stderr,"SHARED CAMPAIGN division complete\n");stage=100;

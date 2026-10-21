@@ -572,6 +572,10 @@ void port_shared_poll_input(void)
            flips. Capture on the game thread while they wait for input, too. */
         if(now>=next){next=now+30;port_shared_flip();}
     }
+#if COOP_GAME == 1
+    /* Keep the diagnostic's large scan-out buffer off the ordinary input path. */
+    if(orb_testing && !orb_checked)campaign_orb_frame();
+#endif
 }
 int port_shared_click(int16_t *x,int16_t *y)
 {

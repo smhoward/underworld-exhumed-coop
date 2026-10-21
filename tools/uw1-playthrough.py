@@ -128,7 +128,12 @@ def long_jump(role,target=None):
             airborne=airborne or not current.get('grounded',True)
             if target and airborne and not braked and max(abs(current['x']/256-target[0]),abs(current['y']/256-target[1]))<.35:
                 command(role,'key',KEYS['w'],0);braked=True
-            if airborne and current.get('grounded',True):return current
+            # A rising avatar can briefly regain the ground-contact bit while
+            # overlapping a ledge. Its jump is still in progress until vertical
+            # velocity and acceleration have both settled.
+            if (airborne and current.get('grounded',True)
+                and current.get('velocity',[0,0,0])[2]==0
+                and current.get('acceleration',[0,0,0])[2]==0):return current
         raise RuntimeError('The native long jump did not take off and land')
     finally:
         release_movement(role)
